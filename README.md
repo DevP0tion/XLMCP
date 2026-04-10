@@ -1,10 +1,11 @@
 # ExcelTool
 
-PowerShell COM 자동화 기반 Excel MCP 서버.
+Claude Code에서 Excel을 직접 제어하는 MCP 서버.
 
-열려 있는 Excel 인스턴스를 자동 감지하여 연결합니다. 워크북/시트 파라미터를 생략하면 ActiveWorkbook/ActiveSheet를 자동으로 사용합니다.
+실행 중인 Excel 인스턴스에 자동 연결되며, 워크북·시트 파라미터 생략 시 현재 활성 대상을 사용합니다.
 
-> **Windows 전용** — PowerShell + Excel COM을 사용하므로 Windows에서만 동작합니다.
+- **런타임**: Windows + PowerShell + Excel COM
+- **전송**: stdio (Claude Code 플러그인)
 
 ## 설치
 
