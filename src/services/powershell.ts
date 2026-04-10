@@ -8,11 +8,34 @@ export async function getShell(): Promise<InstanceType<typeof Shell>> {
       executionPolicy: "Bypass",
       noProfile: true,
     });
-    // Excel COM 초기화
+    // 실행 중인 Excel에 연결 시도, 없으면 새로 생성
     await shell.invoke(`
-      $excel = New-Object -ComObject Excel.Application
-      $excel.Visible = $false
+      try {
+        $excel = [System.Runtime.InteropServices.Marshal]::GetActiveObject("Excel.Application")
+      } catch {
+        $excel = New-Object -ComObject Excel.Application
+        $excel.Visible = $true
+      }
       $excel.DisplayAlerts = $false
+
+      function Resolve-Workbook {
+        param([string]$Name)
+        if ($Name -and $Name -ne "") {
+          return $excel.Workbooks.Item($Name)
+        }
+        if (-not $excel.ActiveWorkbook) {
+          throw "열려 있는 워크북이 없습니다."
+        }
+        return $excel.ActiveWorkbook
+      }
+
+      function Resolve-Sheet {
+        param($wb, [string]$SheetName)
+        if ($SheetName -and $SheetName -ne "") {
+          return $wb.Worksheets.Item($SheetName)
+        }
+        return $wb.ActiveSheet
+      }
     `);
   }
   return shell;
@@ -29,8 +52,7 @@ export async function dispose(): Promise<void> {
     try {
       await shell.invoke(`
         if ($excel) {
-          $excel.Quit()
-          [System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel) | Out-Null
+          [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null
         }
       `);
     } catch { /* ignore */ }
