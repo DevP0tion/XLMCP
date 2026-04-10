@@ -1,15 +1,19 @@
 {
-  "name": "excel-mcp-server",
+  "name": "excel-mcp",
   "version": "0.1.0",
   "type": "module",
   "bin": {
-    "excel-mcp-server": "./dist/index.js"
+    "excel-mcp": "./dist/index.js"
   },
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target node",
     "dev": "bun run src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run build"
   },
+  "files": [
+    "dist"
+  ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
     "node-powershell": "^5.0.1",

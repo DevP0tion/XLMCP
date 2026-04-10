@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "excel": {
-      "command": "bun",
-      "args": ["run", "${CLAUDE_PLUGIN_ROOT}/src/index.ts"]
+      "command": "bunx",
+      "args": ["excel-mcp@latest"]
     }
   }
 }

@@ -8,7 +8,7 @@ import { registerCellTools } from "./tools/cell.js";
 import { registerFormatTools } from "./tools/format.js";
 
 const server = new McpServer({
-  name: "excel-mcp-server",
+  name: "excel-mcp",
   version: "0.1.0",
 });
 
