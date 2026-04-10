@@ -1,12 +1,14 @@
-import Shell from "node-powershell";
+import { PowerShell } from "node-powershell";
 
-let shell: InstanceType<typeof Shell> | null = null;
+let shell: PowerShell | null = null;
 
-export async function getShell(): Promise<InstanceType<typeof Shell>> {
+export async function getShell(): Promise<PowerShell> {
   if (!shell) {
-    shell = new Shell({
-      executionPolicy: "Bypass",
-      noProfile: true,
+    shell = new PowerShell({
+      executableOptions: {
+        "-ExecutionPolicy": "Bypass",
+        "-NoProfile": true,
+      },
     });
     // 실행 중인 Excel에 연결 시도, 없으면 새로 생성
     await shell.invoke(`
@@ -56,7 +58,7 @@ export async function dispose(): Promise<void> {
         }
       `);
     } catch { /* ignore */ }
-    shell.dispose();
+    await shell.dispose();
     shell = null;
   }
 }
