@@ -8,24 +8,12 @@ PowerShell COM 자동화 기반 Excel MCP 서버.
 
 ## 설치
 
-### 권장: Claude Code 플러그인
-
 ```
 /plugin install /path/to/xlmcp
 ```
 
 플러그인으로 설치하면 `bunx xlmcp@latest`가 자동 실행됩니다.
 
-### 비권장: 모듈 단독 설치
-
-```bash
-bun add -g xlmcp
-# 또는
-npm install -g xlmcp
-```
-
-> ⚠️ 단독 설치 시 Claude Code와의 연결은 별도로 MCP 설정을 직접 구성해야 합니다.
-> 플러그인 설치를 사용하면 MCP 서버 등록이 자동으로 처리되므로, 특별한 이유가 없다면 플러그인 방식을 권장합니다.
 
 ## 도구 목록 (18개)
 
