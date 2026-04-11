@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { runPS } from "../../services/powershell.js";
-import { psEscape, textContent } from "../../services/utils.js";
+import { psEscape, textContent, parseJSON } from "../../services/utils.js";
 import { workbookParam, sheetParam } from "../../schemas/common.js";
 
 export function register(server: McpServer) {
@@ -67,7 +67,7 @@ export function register(server: McpServer) {
         ${fieldCmds.join("\n        ")}
         @{ Name = $pvt.Name; Location = $pvt.TableRange1.Address() } | ConvertTo-Json -Compress
       `);
-      return textContent(JSON.parse(raw.trim()));
+      return textContent(parseJSON(raw));
     }
   );
 }

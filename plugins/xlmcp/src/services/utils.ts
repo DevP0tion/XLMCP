@@ -9,10 +9,37 @@ export function psEscape(str: string): string {
     .replace(/'/g, "''");
 }
 
-/** runPS 결과를 JSON으로 파싱. 실패 시 raw 텍스트 반환 */
+/**
+ * PowerShell 출력에서 JSON을 안전하게 추출·파싱.
+ * 경고 메시지 등이 섞여 있어도 첫 번째 JSON 구조를 찾아 파싱한다.
+ */
 export function parseJSON<T = unknown>(raw: string): T {
   const trimmed = raw.trim();
-  return JSON.parse(trimmed);
+
+  // 그대로 파싱 시도
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // JSON 시작 지점 탐색 (객체 또는 배열)
+    const objStart = trimmed.indexOf("{");
+    const arrStart = trimmed.indexOf("[");
+    let start = -1;
+    if (objStart === -1) start = arrStart;
+    else if (arrStart === -1) start = objStart;
+    else start = Math.min(objStart, arrStart);
+
+    if (start === -1) {
+      throw new Error(`JSON 파싱 실패: ${trimmed.slice(0, 200)}`);
+    }
+
+    // 해당 지점부터 파싱 시도 (끝에서부터 줄여가며)
+    const sub = trimmed.slice(start);
+    try {
+      return JSON.parse(sub);
+    } catch {
+      throw new Error(`JSON 파싱 실패: ${sub.slice(0, 200)}`);
+    }
+  }
 }
 
 /** MCP text content 래퍼 */

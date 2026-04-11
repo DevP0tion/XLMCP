@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { runPS } from "../../services/powershell.js";
-import { textContent } from "../../services/utils.js";
+import { textContent, parseJSON } from "../../services/utils.js";
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -19,7 +19,7 @@ export function register(server: McpServer) {
         }
         "[" + ($result -join ",") + "]"
       `);
-      return textContent(JSON.parse(raw.trim()));
+      return textContent(parseJSON(raw));
     }
   );
 }

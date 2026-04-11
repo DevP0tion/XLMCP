@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { runPS } from "../../services/powershell.js";
-import { psEscape, textContent } from "../../services/utils.js";
+import { psEscape, textContent, parseJSON } from "../../services/utils.js";
 import { workbookParam, sheetParam } from "../../schemas/common.js";
 
 export function register(server: McpServer) {
@@ -33,7 +33,7 @@ export function register(server: McpServer) {
           $replaced = $r.Replace('${psEscape(find)}', '${psEscape(replace)}', [Type]::Missing, [Type]::Missing, ${matchCase ? "$true" : "$false"})
           @{ Success = $replaced } | ConvertTo-Json -Compress
         `);
-        return textContent(JSON.parse(raw.trim()));
+        return textContent(parseJSON(raw));
       } else {
         const raw = await runPS(`
           $wb = Resolve-Workbook ${wbName}
@@ -50,7 +50,7 @@ export function register(server: McpServer) {
           }
           @{ Count = $results.Count; Matches = $results } | ConvertTo-Json -Depth 5 -Compress
         `);
-        return textContent(JSON.parse(raw.trim()));
+        return textContent(parseJSON(raw));
       }
     }
   );
