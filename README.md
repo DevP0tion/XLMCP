@@ -18,16 +18,12 @@ Excel을 직접 제어하는 MCP 서버.
 
 ### Claude Desktop
 
-`claude_desktop_config.json`에 추가:
+`claude_desktop_config.json`의 `mcpServers`에 추가:
 
 ```json
-{
-  "mcpServers": {
-    "excel": {
-      "command": "bunx",
-      "args": ["xlmcp@latest"]
-    }
-  }
+"excel": {
+  "command": "bunx",
+  "args": ["xlmcp@latest"]
 }
 ```
 
