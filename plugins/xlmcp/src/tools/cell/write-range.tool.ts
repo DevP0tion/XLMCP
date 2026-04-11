@@ -41,13 +41,15 @@ export function register(server: McpServer) {
         $endCell = $ws.Cells.Item($endRow, $endCol)
         $targetRange = $ws.Range($start, $endCell)
         $arr = New-Object 'object[,]' ${rows},${cols}
+        $formulas = @()
         $srcData = @(${psRows})
         for ($i = 0; $i -lt ${rows}; $i++) {
           $row = @($srcData[$i])
           for ($j = 0; $j -lt ${cols}; $j++) {
             $val = $row[$j]
             if ($val -match '^\=') {
-              $ws.Cells.Item($start.Row + $i, $start.Column + $j).Formula = $val
+              $formulas += @{ R = $start.Row + $i; C = $start.Column + $j; F = $val }
+              $arr[$i,$j] = $null
             } else {
               $num = 0.0
               if ([double]::TryParse($val, [ref]$num)) {
@@ -59,6 +61,9 @@ export function register(server: McpServer) {
           }
         }
         $targetRange.Value2 = $arr
+        foreach ($f in $formulas) {
+          $ws.Cells.Item($f.R, $f.C).Formula = $f.F
+        }
       `);
       return textContent({ success: true, rows, cols });
     }

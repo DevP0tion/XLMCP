@@ -58,21 +58,26 @@ export async function runPS(script: string): Promise<string> {
     return result.raw ?? "";
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    // PowerShell InvocationError에서 구조화된 메시지 추출 시도
-    try {
-      const parsed = JSON.parse(msg);
-      throw new Error(JSON.stringify({
-        error: true,
-        message: parsed.Exception?.Message ?? parsed.FullyQualifiedErrorId ?? msg,
-        type: parsed.Exception?.GetType?.()?.Name ?? "PowerShellError",
-      }));
-    } catch {
-      throw new Error(JSON.stringify({
-        error: true,
-        message: msg.replace(/\r?\n/g, " ").trim(),
-        type: "PowerShellError",
-      }));
+    const cleaned = msg.replace(/\r?\n/g, " ").trim();
+
+    // 구조화된 에러 추출 시도
+    let errorMessage = cleaned;
+    const jsonStart = cleaned.indexOf("{");
+    const jsonEnd = cleaned.lastIndexOf("}");
+    if (jsonStart !== -1 && jsonEnd > jsonStart) {
+      try {
+        const parsed = JSON.parse(cleaned.slice(jsonStart, jsonEnd + 1));
+        errorMessage = parsed.Exception?.Message ?? parsed.FullyQualifiedErrorId ?? cleaned;
+      } catch {
+        // JSON 파싱 실패 시 원본 메시지 사용
+      }
     }
+
+    throw new Error(JSON.stringify({
+      error: true,
+      message: errorMessage,
+      type: "PowerShellError",
+    }));
   }
 }
 
