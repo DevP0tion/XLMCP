@@ -31,7 +31,7 @@ Excel을 직접 제어하는 MCP 서버.
 - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 
-## 도구 (39개)
+## 도구 (40개)
 
 ### Workbook (6)
 
@@ -61,7 +61,7 @@ Excel을 직접 제어하는 MCP 서버.
 | `excel_read_cell` | 단일 셀의 값, 수식, 표시 텍스트, 표시 형식 반환 |
 | `excel_write_cell` | 단일 셀에 값 또는 수식 입력. `=`로 시작하면 수식 처리 |
 | `excel_read_range` | 범위를 2D 배열로 반환. 타입 유지. 생략 시 UsedRange |
-| `excel_write_range` | 시작 셀부터 2D 배열 데이터 입력. 숫자 자동 감지, 수식 혼합 가능 |
+| `excel_write_range` | 시작 셀부터 2D 배열 데이터 입력. 숫자 자동 감지, 수식 혼합 가능. 대용량 시 자동 청크 분할 병렬 쓰기 |
 | `excel_read_range_formulas` | 범위의 수식을 2D 배열로 반환 |
 | `excel_clear_range` | 범위 삭제 (값만/서식만/전체) |
 
@@ -76,12 +76,13 @@ Excel을 직접 제어하는 MCP 서버.
 | `excel_read_cell_format` | 셀의 현재 서식 정보 반환 (폰트, 색상, 정렬, 테두리, 병합 여부) |
 | `excel_write_cell_format` | 서식 데이터 기반 일괄 적용. `read_cell_format` 출력으로 서식 복제 가능 |
 
-### Data (5)
+### Data (6)
 
 | 도구 | 설명 |
 |---|---|
 | `excel_insert_delete_rows_cols` | 행 또는 열 삽입·삭제 |
-| `excel_copy_paste_range` | 범위 복사/붙여넣기 (값만/수식만/서식만/전체) |
+| `excel_copy_paste_range` | 값 또는 수식 복사/붙여넣기. 시스템 클립보드 미사용, 병렬 안전 |
+| `excel_copy_paste_format` | 서식 복사/붙여넣기. 값·수식과 함께 필요 시 `copy_paste_range`와 순차 호출 |
 | `excel_find_replace` | 시트 내 찾기/바꾸기. 찾기만도 가능 |
 | `excel_sort_range` | 범위를 지정 열 기준으로 정렬 |
 | `excel_auto_filter` | 자동 필터 설정/해제/조건 적용 |

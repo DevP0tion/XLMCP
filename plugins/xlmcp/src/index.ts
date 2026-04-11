@@ -15,7 +15,7 @@ import { registerViewTools } from "./tools/view/index.js";
 
 const server = new McpServer({
   name: "xlmcp",
-  version: "0.2.0",
+  version: "0.3.0",
 });
 
 // 도구 등록

@@ -9,9 +9,9 @@
   "plugins": [
     {
       "name": "xlmcp",
-      "description": "PowerShell COM을 통한 Excel 자동화 MCP 서버. 열린 Excel 인스턴스를 자동 감지하여 연결합니다.",
+      "description": "Excel 자동화 MCP 서버 (40개 도구). 세션 풀링, 가상 클립보드, 청크 병렬 쓰기. Windows 전용.",
       "source": "./plugins/xlmcp",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "category": "productivity"
     }
   ]
