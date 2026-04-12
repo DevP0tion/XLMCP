@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { runPS } from "../../services/powershell.js";
-import { psEscape, textContent } from "../../services/utils.js";
+import { psEscape, textContent, hexToRgb, rgbToOle } from "../../services/utils.js";
 import { workbookParam, sheetParam } from "../../schemas/common.js";
 
 const borderSchema = z
@@ -62,14 +62,12 @@ export function register(server: McpServer) {
         if (font.bold !== undefined) cmds.push(`$r.Font.Bold = $${font.bold}`);
         if (font.italic !== undefined) cmds.push(`$r.Font.Italic = $${font.italic}`);
         if (font.color) {
-          const [r, g, b] = hexToRgb(font.color);
-          cmds.push(`$r.Font.Color = ${r + g * 256 + b * 65536}`);
+          cmds.push(`$r.Font.Color = ${rgbToOle(hexToRgb(font.color))}`);
         }
       }
 
       if (bgColor) {
-        const [r, g, b] = hexToRgb(bgColor);
-        cmds.push(`$r.Interior.Color = ${r + g * 256 + b * 65536}`);
+        cmds.push(`$r.Interior.Color = ${rgbToOle(hexToRgb(bgColor))}`);
       }
 
       if (hAlign) {
@@ -92,8 +90,7 @@ export function register(server: McpServer) {
           cmds.push(`$r.Borders.Item(${idx}).LineStyle = 1`);
           if (cfg.style) cmds.push(`$r.Borders.Item(${idx}).Weight = ${weightMap[cfg.style]}`);
           if (cfg.color) {
-            const [r, g, b] = hexToRgb(cfg.color);
-            cmds.push(`$r.Borders.Item(${idx}).Color = ${r + g * 256 + b * 65536}`);
+            cmds.push(`$r.Borders.Item(${idx}).Color = ${rgbToOle(hexToRgb(cfg.color))}`);
           }
         }
       }
@@ -109,13 +106,4 @@ export function register(server: McpServer) {
       return textContent({ success: true });
     }
   );
-}
-
-function hexToRgb(hex: string): [number, number, number] {
-  const h = hex.replace("#", "");
-  return [
-    parseInt(h.substring(0, 2), 16),
-    parseInt(h.substring(2, 4), 16),
-    parseInt(h.substring(4, 6), 16),
-  ];
 }
