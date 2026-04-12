@@ -52,11 +52,15 @@ export function register(server: McpServer) {
         : "";
 
       const raw = await runPS(`
+        $imgPath = '${psEscape(filePath)}'
+        if (-not (Test-Path $imgPath)) {
+          throw "이미지 파일을 찾을 수 없습니다: $imgPath"
+        }
         $wb = Resolve-Workbook ${wbName}
         $ws = Resolve-Sheet $wb ${shName}
         $pos = $ws.Range('${psEscape(cell)}')
         $pic = $ws.Shapes.AddPicture(
-          '${psEscape(filePath)}',
+          $imgPath,
           0,
           -1,
           $pos.Left,
