@@ -38,7 +38,7 @@ export function register(server: McpServer) {
         $r.CopyPicture([int]1, [int]2)
 
         # 임시 ChartObject 생성 + Activate
-        $chartObj = $ws.ChartObjects.Add(0, 0, $w, $h)
+        $chartObj = $ws.ChartObjects().Add(0, 0, $w, $h)
         $chartObj.Activate()
 
         # ActiveChart 경유 Paste (COM 안정성)
