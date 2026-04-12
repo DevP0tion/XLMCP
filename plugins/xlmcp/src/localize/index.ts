@@ -1,9 +1,13 @@
 import koKr from "./ko_kr.json";
+import enUs from "./en_us.json";
+import zhCn from "./zh_cn.json";
 
 type LocaleData = Record<string, unknown>;
 
 const locales: Record<string, LocaleData> = {
   ko_kr: koKr as LocaleData,
+  en_us: enUs as LocaleData,
+  zh_cn: zhCn as LocaleData,
 };
 
 let current: LocaleData = locales.ko_kr;
