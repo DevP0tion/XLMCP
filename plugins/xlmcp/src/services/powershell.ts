@@ -141,6 +141,7 @@ class Session {
 
 // ── 작업 큐 항목 ──
 interface QueuedTask {
+  id: number;
   script: string;
   resolve: (v: string) => void;
   reject: (e: Error) => void;
@@ -155,6 +156,7 @@ class SessionPool {
   private initialized = false;
   private nextGeneralId = 0;
   private pendingCreations = 0; // 생성 중인 세션 수 (경합 방지)
+  private nextTaskId = 1;
 
   // exclusive
   private exclusiveRunning = false;
@@ -234,7 +236,7 @@ class SessionPool {
     // 상한 도달 → 큐에 대기
     this.totalQueued++;
     return new Promise<string>((resolve, reject) => {
-      this.generalQueue.push({ script, resolve, reject, enqueuedAt: Date.now() });
+      this.generalQueue.push({ id: this.nextTaskId++, script, resolve, reject, enqueuedAt: Date.now() });
     });
   }
 
@@ -407,6 +409,7 @@ class SessionPool {
 
   // ── 상태 조회 ──
   getStatus() {
+    const now = Date.now();
     return {
       poolMaxSize: POOL_SIZE,
       poolCurrentSize: this.generalPool.length,
@@ -421,11 +424,33 @@ class SessionPool {
         : null,
       exclusiveRunning: this.exclusiveRunning,
       generalActiveCount: this.generalActiveCount,
-      generalQueueLength: this.generalQueue.length,
+      generalQueue: this.generalQueue.map((t) => ({
+        id: t.id,
+        waitingMs: now - t.enqueuedAt,
+      })),
       exclusiveQueueLength: this.exclusiveQueue.length,
       totalProcessed: this.totalProcessed,
       totalQueued: this.totalQueued,
     };
+  }
+
+  // ── 작업 취소 (단건) ──
+  cancelTask(taskId: number): boolean {
+    const idx = this.generalQueue.findIndex((t) => t.id === taskId);
+    if (idx === -1) return false;
+    const [task] = this.generalQueue.splice(idx, 1);
+    task.reject(new Error(JSON.stringify({ error: true, message: `작업 #${taskId} 취소됨`, type: "Cancelled" })));
+    return true;
+  }
+
+  // ── 작업 취소 (전체) ──
+  cancelAllTasks(): number {
+    const count = this.generalQueue.length;
+    for (const task of this.generalQueue) {
+      task.reject(new Error(JSON.stringify({ error: true, message: `작업 #${task.id} 취소됨`, type: "Cancelled" })));
+    }
+    this.generalQueue = [];
+    return count;
   }
 
   // ── 종료 ──
@@ -480,6 +505,14 @@ export async function runPS(script: string, options?: RunPSOptions): Promise<str
 
 export function getPoolStatus() {
   return pool.getStatus();
+}
+
+export function cancelTask(taskId: number): boolean {
+  return pool.cancelTask(taskId);
+}
+
+export function cancelAllTasks(): number {
+  return pool.cancelAllTasks();
 }
 
 export async function dispose(): Promise<void> {
