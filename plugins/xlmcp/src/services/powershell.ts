@@ -146,6 +146,7 @@ class SessionPool {
   private roundRobinIndex = 0;
   private initialized = false;
   private nextGeneralId = 0;
+  private pendingCreations = 0; // 생성 중인 세션 수 (경합 방지)
 
   // exclusive
   private exclusiveRunning = false;
@@ -203,11 +204,19 @@ class SessionPool {
       return this.invokeOnSession(idle, script, false);
     }
 
-    // 상한 미도달 → 새 세션 생성
-    if (this.generalPool.length < POOL_SIZE) {
-      const newSession = await Session.create(this.nextGeneralId++);
-      this.generalPool.push(newSession);
-      return this.invokeOnSession(newSession, script, false);
+    // 상한 미도달 → 새 세션 생성 (pendingCreations로 동시 생성 경합 방지)
+    if (this.generalPool.length + this.pendingCreations < POOL_SIZE) {
+      this.pendingCreations++;
+      try {
+        const newSession = await Session.create(this.nextGeneralId++);
+        this.generalPool.push(newSession);
+        return this.invokeOnSession(newSession, script, false);
+      } catch (err) {
+        this.nextGeneralId--;
+        throw err;
+      } finally {
+        this.pendingCreations--;
+      }
     }
 
     // 상한 도달 → 큐에 대기
@@ -378,6 +387,7 @@ class SessionPool {
     return {
       poolMaxSize: POOL_SIZE,
       poolCurrentSize: this.generalPool.length,
+      pendingCreations: this.pendingCreations,
       sessions: this.generalPool.map((s) => ({
         id: s.id,
         busy: s.busy,
