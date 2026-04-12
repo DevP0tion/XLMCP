@@ -15,7 +15,7 @@
   "tools": {
     "workbook": {
       "create": {
-        "title": "워크북 생성",
+        "title": "새 워크북 생성",
         "description": "새 빈 워크북을 생성합니다. savePath를 지정하면 즉시 저장합니다.",
         "params": {
           "savePath": "저장할 절대 경로 (.xlsx). 생략 시 저장하지 않음"
@@ -442,7 +442,7 @@
         }
       },
       "namedRange": {
-        "title": "이름 정의",
+        "title": "이름 정의 관리",
         "description": "이름 정의(Named Range)를 조회, 생성, 삭제합니다.",
         "params": {
           "action": "동작: list(조회), add(생성), delete(삭제)",
