@@ -16,7 +16,7 @@ Excel을 직접 제어하는 MCP 서버.
 - **대용량 쓰기**: 500행 이상 시 자동 청크 분할 + JSON 임시 파일 + 병렬 쓰기.
 - **가상 클립보드**: 값/수식 복사 시 시스템 클립보드 미사용. 서식 복사만 시스템 클립보드 사용.
 
-## 도구 (47개)
+## 도구 (48개)
 
 ### Workbook (6)
 
@@ -100,13 +100,14 @@ Excel을 직접 제어하는 MCP 서버.
 | `excel_set_data_validation` | 데이터 유효성 검사 (드롭다운, 숫자 범위, 수식 등) |
 | `excel_set_conditional_format` | 조건부 서식 (셀 값, 수식, 색조, 데이터 막대) |
 
-### Image (3)
+### Image (4)
 
 | 도구 | 설명 |
 |---|---|
 | `excel_insert_image` | 이미지 파일을 시트에 임베딩 삽입 (PNG, JPG, BMP, GIF). 위치·크기·비율 유지 지정 |
 | `excel_list_images` | 시트에 삽입된 이미지(Picture) 목록 조회 (이름, 크기, 위치) |
 | `excel_manage_image` | 이미지 삭제, 이동(셀 지정), 크기 변경 |
+| `excel_export_range_image` | 셀 범위를 이미지 파일(PNG/JPG/BMP/GIF)로 내보내기 (exclusive) |
 
 ### VBA (3)
 
@@ -145,7 +146,7 @@ src/
     ├── chart/               # 1 도구
     ├── pivot/               # 1 도구
     ├── validation/          # 2 도구
-    ├── image/               # 3 도구
+    ├── image/               # 4 도구 (+ 1 exclusive)
     ├── vba/                 # 3 도구
     └── view/                # 4 도구 (+ 1 exclusive)
 ```
