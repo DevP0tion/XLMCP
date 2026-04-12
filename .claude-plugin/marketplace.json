@@ -1,6 +1,6 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "ExcelTool",
+  "name": "XLMCP",
   "version": "1.0.0",
   "description": "PowerShell COM 자동화 기반 Excel MCP 도구 모음",
   "owner": {
