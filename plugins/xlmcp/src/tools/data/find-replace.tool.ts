@@ -23,7 +23,7 @@ export function register(server: McpServer) {
     async ({ workbook, sheet, find, replace, matchCase, range }) => {
       const wbName = workbook ? `'${psEscape(workbook)}'` : '""';
       const shName = sheet ? `'${psEscape(sheet)}'` : '""';
-      const rangeExpr = range ? `$ws.Range('${psEscape(range)}')` : `$ws.Cells`;
+      const rangeExpr = range ? `$ws.Range('${psEscape(range)}')` : `$ws.UsedRange`;
 
       if (replace !== undefined) {
         const raw = await runPS(`

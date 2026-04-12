@@ -96,11 +96,15 @@ class Session {
 
   async dispose(): Promise<void> {
     try {
-      await this.ps.invoke(`
-        if ($excel) {
-          [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null
-        }
-      `);
+      // 정리 invoke에도 타임아웃 적용 (블로킹 PS 방어)
+      await Session.withTimeout(
+        this.ps.invoke(`
+          if ($excel) {
+            [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null
+          }
+        `),
+        5000
+      );
     } catch { /* ignore */ }
     try {
       await this.ps.dispose();
