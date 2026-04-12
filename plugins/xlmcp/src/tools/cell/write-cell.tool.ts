@@ -22,9 +22,15 @@ export function register(server: McpServer) {
       const wbName = workbook ? `'${psEscape(workbook)}'` : '""';
       const shName = sheet ? `'${psEscape(sheet)}'` : '""';
       const isFormula = value.startsWith("=");
-      const cmd = isFormula
-        ? `$c.Formula = '${psEscape(value)}'`
-        : `$c.Value2 = '${psEscape(value)}'`;
+      let cmd: string;
+      if (isFormula) {
+        cmd = `$c.Formula = '${psEscape(value)}'`;
+      } else {
+        const num = Number(value);
+        cmd = value !== "" && !isNaN(num)
+          ? `$c.Value2 = ${num}`
+          : `$c.Value2 = '${psEscape(value)}'`;
+      }
       await runPS(`
         $wb = Resolve-Workbook ${wbName}
         $ws = Resolve-Sheet $wb ${shName}

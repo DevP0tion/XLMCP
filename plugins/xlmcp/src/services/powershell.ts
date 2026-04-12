@@ -64,7 +64,7 @@ class Session {
         throw $_
       } finally {
         # COM 참조 정리 (변수가 존재하는 경우만)
-        foreach ($__v in @('r','src','srcWs','dstWs','dst','dest','targetRange','start','chunkStart','chunkEnd','pos','t','pvt','pf','cache','chart','fc','first','current','n','existing')) {
+        foreach ($__v in @('r','c','src','srcWs','dstWs','dst','dest','targetRange','start','chunkStart','chunkEnd','pos','t','pvt','pf','cache','chart','fc','first','current','n','existing')) {
           $__obj = Get-Variable -Name $__v -ValueOnly -ErrorAction SilentlyContinue
           if ($__obj -ne $null) {
             try { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($__obj) } catch {}
@@ -318,8 +318,11 @@ class SessionPool {
           this.generalDrainResolve();
           this.generalDrainResolve = null;
         }
-        // 큐에서 다음 작업 디스패치
-        this.dispatchFromQueue(session);
+        // 큐에서 다음 작업 디스패치 (복구된 세션이면 풀에서 탐색)
+        const dispatchTarget = session.alive
+          ? session
+          : this.generalPool.find((s) => s.id === session.id) ?? session;
+        this.dispatchFromQueue(dispatchTarget);
         // general quiet 시그널 (큐 비고 활성 0이면)
         this.signalGeneralQuiet();
       }
@@ -408,16 +411,21 @@ class SessionPool {
     }
   }
 
-  // ── heartbeat ──
+  // ── heartbeat (병렬 체크) ──
   private async heartbeat(): Promise<void> {
-    for (const s of this.generalPool) {
+    const checks = this.generalPool.map(async (s) => {
       const alive = await s.healthCheck();
       if (!alive) await this.recoverSession(s, false);
-    }
+    });
     if (this.exclusiveSession) {
-      const alive = await this.exclusiveSession.healthCheck();
-      if (!alive) await this.recoverSession(this.exclusiveSession, true);
+      const exSess = this.exclusiveSession;
+      checks.push(
+        exSess.healthCheck().then(async (alive) => {
+          if (!alive) await this.recoverSession(exSess, true);
+        })
+      );
     }
+    await Promise.all(checks);
   }
 
   // ── 상태 조회 ──

@@ -47,11 +47,6 @@ export function textContent(data: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
 }
 
-/** MCP error content 래퍼 */
-export function errorContent(message: string) {
-  return { content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }], isError: true };
-}
-
 /** hex RGB → [r, g, b] 변환 */
 export function hexToRgb(hex: string): [number, number, number] {
   const h = hex.replace("#", "");
