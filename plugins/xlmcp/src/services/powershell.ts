@@ -62,6 +62,14 @@ class Session {
       } catch {
         [Console]::Error.WriteLine(($_ | ConvertTo-Json -Compress))
         throw $_
+      } finally {
+        # COM 참조 정리 (변수가 존재하는 경우만)
+        foreach ($__v in @('r','srcWs','dstWs','targetRange','t','pvt','cache','chart')) {
+          $__obj = Get-Variable -Name $__v -ValueOnly -ErrorAction SilentlyContinue
+          if ($__obj -ne $null) {
+            try { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($__obj) } catch {}
+          }
+        }
       }
     `;
     try {
@@ -158,6 +166,10 @@ class SessionPool {
   private generalActiveCount = 0;
   private generalDrainResolve: (() => void) | null = null;
 
+  // 이벤트 기반 대기 (폴링 제거)
+  private exclusiveEndWaiters: (() => void)[] = [];
+  private generalQuietWaiters: (() => void)[] = [];
+
   // 작업 큐
   private generalQueue: QueuedTask[] = [];
   private totalProcessed = 0;
@@ -252,6 +264,7 @@ class SessionPool {
       if (next && this.generalQueue.length > 0) {
         // general 큐 우선: exclusive 해제 → general flush → 완료 대기 → exclusive 재개
         this.exclusiveRunning = false;
+        this.signalExclusiveEnd();
         this.flushGeneralQueue();
         this.waitForGeneralQuiet().then(() => {
           this.runExclusive(next.script).then(next.resolve, next.reject);
@@ -261,6 +274,7 @@ class SessionPool {
         this.runExclusive(next.script).then(next.resolve, next.reject);
       } else {
         this.exclusiveRunning = false;
+        this.signalExclusiveEnd();
         this.flushGeneralQueue();
       }
     }
@@ -291,6 +305,8 @@ class SessionPool {
         }
         // 큐에서 다음 작업 디스패치
         this.dispatchFromQueue(session);
+        // general quiet 시그널 (큐 비고 활성 0이면)
+        this.signalGeneralQuiet();
       }
     }
   }
@@ -332,26 +348,33 @@ class SessionPool {
     return null;
   }
 
-  // ── exclusive 대기 ──
+  // ── exclusive 종료 대기 (이벤트 기반) ──
   private waitForExclusiveEnd(): Promise<void> {
+    if (!this.exclusiveRunning) return Promise.resolve();
     return new Promise<void>((resolve) => {
-      const check = () => {
-        if (!this.exclusiveRunning) resolve();
-        else setTimeout(check, 50);
-      };
-      check();
+      this.exclusiveEndWaiters.push(resolve);
     });
   }
 
-  // ── general 큐 + 활성 작업 완료 대기 ──
+  // ── general 큐 + 활성 작업 완료 대기 (이벤트 기반) ──
   private waitForGeneralQuiet(): Promise<void> {
+    if (this.generalQueue.length === 0 && this.generalActiveCount === 0) return Promise.resolve();
     return new Promise<void>((resolve) => {
-      const check = () => {
-        if (this.generalQueue.length === 0 && this.generalActiveCount === 0) resolve();
-        else setTimeout(check, 50);
-      };
-      check();
+      this.generalQuietWaiters.push(resolve);
     });
+  }
+
+  // ── 이벤트 시그널 ──
+  private signalExclusiveEnd(): void {
+    const waiters = this.exclusiveEndWaiters.splice(0);
+    for (const resolve of waiters) resolve();
+  }
+
+  private signalGeneralQuiet(): void {
+    if (this.generalQueue.length === 0 && this.generalActiveCount === 0) {
+      const waiters = this.generalQuietWaiters.splice(0);
+      for (const resolve of waiters) resolve();
+    }
   }
 
   // ── 세션 복구 ──

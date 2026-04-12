@@ -15,7 +15,7 @@ export function register(server: McpServer) {
         sheet: sheetParam,
         target: z.enum(["row", "column"]).describe("대상: row 또는 column"),
         action: z.enum(["insert", "delete"]).describe("동작: insert 또는 delete"),
-        index: z.number().int().describe("행 번호(1부터) 또는 열 번호(1부터)"),
+        index: z.union([z.number().int(), z.string()]).describe("행 번호(1부터) 또는 열 번호/문자 (1 또는 'A')"),
         count: z.number().int().default(1).describe("삽입/삭제할 개수"),
       },
       annotations: { readOnlyHint: false, destructiveHint: true },
@@ -23,9 +23,21 @@ export function register(server: McpServer) {
     async ({ workbook, sheet, target, action, index, count }) => {
       const wbName = workbook ? `'${psEscape(workbook)}'` : '""';
       const shName = sheet ? `'${psEscape(sheet)}'` : '""';
-      const rangeExpr = target === "row"
-        ? `$ws.Rows("${index}:${index + count - 1}")`
-        : `$ws.Columns("${index}:${index + count - 1}")`;
+
+      let rangeExpr: string;
+      if (target === "row") {
+        const idx = Number(index);
+        rangeExpr = `$ws.Rows("${idx}:${idx + count - 1}")`;
+      } else {
+        if (typeof index === "number") {
+          rangeExpr = `$ws.Columns("${index}:${index + count - 1}")`;
+        } else {
+          // 문자 입력: "A" → Columns("A:A"), count > 1 시 열 오프셋 계산
+          const startCode = index.toUpperCase().charCodeAt(0);
+          const endLetter = String.fromCharCode(startCode + count - 1);
+          rangeExpr = `$ws.Columns("${index.toUpperCase()}:${endLetter}")`;
+        }
+      }
       const cmd = action === "insert" ? "Insert()" : "Delete()";
       await runPS(`
         $wb = Resolve-Workbook ${wbName}
