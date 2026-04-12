@@ -8,7 +8,7 @@ import { runPS } from "../../services/powershell.js";
 import { psEscape, textContent } from "../../services/utils.js";
 import { workbookParam, sheetParam } from "../../schemas/common.js";
 
-const DEFAULT_CHUNK_SIZE = 500;
+const DEFAULT_CHUNK_SIZE = 30;
 
 interface FormulaEntry {
   rowOffset: number;
@@ -30,7 +30,7 @@ export function register(server: McpServer) {
         data: z
           .array(z.array(z.string()))
           .describe("2D 배열 데이터. 각 내부 배열이 한 행"),
-        chunkSize: z.number().int().min(100).optional().describe("청크 분할 행수. 이 값 이상이면 병렬 쓰기. 기본 500"),
+        chunkSize: z.number().int().optional().describe("청크 분할 행수. 이 값 이상이면 병렬 쓰기. 기본 30"),
       },
       annotations: { readOnlyHint: false, destructiveHint: false },
     },

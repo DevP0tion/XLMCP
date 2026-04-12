@@ -8,7 +8,7 @@ import { runPS } from "../../services/powershell.js";
 import { psEscape, textContent, parseJSON } from "../../services/utils.js";
 import { workbookParam, sheetParam } from "../../schemas/common.js";
 
-const DEFAULT_CHUNK_SIZE = 500;
+const DEFAULT_CHUNK_SIZE = 30;
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -21,7 +21,7 @@ export function register(server: McpServer) {
         workbook: workbookParam,
         sheet: sheetParam,
         range: z.string().optional().describe("범위 주소 (예: A1:C10). 생략 시 UsedRange"),
-        chunkSize: z.number().int().min(100).optional().describe("청크 분할 행수. 이 값 이상이면 병렬 읽기. 기본 500"),
+        chunkSize: z.number().int().optional().describe("청크 분할 행수. 이 값 이상이면 병렬 읽기. 기본 30"),
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
