@@ -1,8 +1,8 @@
 /**
- * 플러그인 모드 감지 + 환경변수 리졸버.
+ * Plugin mode detection + env resolver.
  *
- * - 플러그인 모드: CLAUDE_PLUGIN_OPTION_* 존재 시 → CLAUDE_PLUGIN_OPTION_* 만 사용
- * - MCP 모드: 그 외 → XLMCP_* 사용
+ * - Plugin mode: CLAUDE_PLUGIN_OPTION_* exists → read CLAUDE_PLUGIN_OPTION_* only
+ * - MCP mode: otherwise → read XLMCP_*
  */
 
 const isPluginMode = Object.keys(process.env).some((k) =>
@@ -10,14 +10,13 @@ const isPluginMode = Object.keys(process.env).some((k) =>
 );
 
 /**
- * 환경변수 읽기. 플러그인 모드에 따라 소스 자동 분기.
+ * Read environment variable. Auto-switches source based on mode.
  *
- * @param key - 변수명 (예: "LANG", "POOL_SIZE")
- * @returns 환경변수 값 또는 undefined
+ * @param key - Variable name (e.g. "POOL_SIZE")
+ * @returns Value or undefined
  *
  * @example
- * env("LANG")       // 플러그인: CLAUDE_PLUGIN_OPTION_LANG / MCP: XLMCP_LANG
- * env("POOL_SIZE")  // 플러그인: CLAUDE_PLUGIN_OPTION_POOL_SIZE / MCP: XLMCP_POOL_SIZE
+ * env("POOL_SIZE")  // Plugin: CLAUDE_PLUGIN_OPTION_POOL_SIZE / MCP: XLMCP_POOL_SIZE
  */
 export function env(key: string): string | undefined {
   if (isPluginMode) {

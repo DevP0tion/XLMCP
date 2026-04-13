@@ -3,13 +3,8 @@
   "description": "Excel 자동화 MCP 서버 (48개 도구). 세션 풀링, 가상 클립보드, 청크 병렬 쓰기.",
   "version": "0.3.0",
   "userConfig": {
-    "lang": {
-      "description": "UI 언어 / UI Language (ko_kr, en_us, zh_cn, ja_jp)",
-      "required": false,
-      "default": "ko_kr"
-    },
     "pool_size": {
-      "description": "PowerShell 세션 풀 크기 / Session pool size (1-8)",
+      "description": "PowerShell session pool size (1-8)",
       "required": false,
       "default": "4"
     }
