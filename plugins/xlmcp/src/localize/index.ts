@@ -13,7 +13,7 @@ const locales: Record<string, LocaleData> = {
 };
 
 const DEFAULT_LOCALE = "ko_kr";
-const envLocale = process.env.XLMCP_LANG?.toLowerCase();
+const envLocale = (process.env.XLMCP_LANG ?? process.env.CLAUDE_PLUGIN_OPTION_LANG)?.toLowerCase();
 let current: LocaleData = locales[envLocale ?? ""] ?? locales[DEFAULT_LOCALE];
 
 /**
