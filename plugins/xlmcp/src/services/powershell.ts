@@ -1,9 +1,8 @@
 import { PowerShell } from "node-powershell";
+import { env } from "./env.js";
 
 // ── 설정 ──
-const POOL_SIZE = Math.max(1, parseInt(
-  process.env.XLMCP_POOL_SIZE ?? process.env.CLAUDE_PLUGIN_OPTION_POOL_SIZE ?? "4", 10
-) || 4);
+const POOL_SIZE = Math.max(1, parseInt(env("POOL_SIZE") ?? "4", 10) || 4);
 const HEARTBEAT_INTERVAL = 10_000;
 const INVOKE_TIMEOUT = 30_000;
 

@@ -12,8 +12,10 @@ const locales: Record<string, LocaleData> = {
   ja_jp: jaJp as LocaleData,
 };
 
+import { env } from "../services/env.js";
+
 const DEFAULT_LOCALE = "ko_kr";
-const envLocale = (process.env.XLMCP_LANG ?? process.env.CLAUDE_PLUGIN_OPTION_LANG)?.toLowerCase();
+const envLocale = env("LANG")?.toLowerCase();
 let current: LocaleData = locales[envLocale ?? ""] ?? locales[DEFAULT_LOCALE];
 
 /**
