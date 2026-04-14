@@ -70,13 +70,18 @@ export function register(server: McpServer) {
         $pvt = $ws.PivotTables('${psEscape(name)}')
         ${cmds.join("\n        ")}
         ${refreshCmd}
+        function Get-FieldNames($fields) {
+          $names = @()
+          try { for ($i = 1; $i -le $fields.Count; $i++) { $names += $fields.Item($i).Name } } catch {}
+          return $names
+        }
         @{
           Name = $pvt.Name
           Location = $pvt.TableRange1.Address()
-          RowFields = @($pvt.RowFields | ForEach-Object { $_.Name })
-          ColumnFields = @($pvt.ColumnFields | ForEach-Object { $_.Name })
-          DataFields = @($pvt.DataFields | ForEach-Object { $_.Name })
-          PageFields = @($pvt.PageFields | ForEach-Object { $_.Name })
+          RowFields = Get-FieldNames $pvt.RowFields
+          ColumnFields = Get-FieldNames $pvt.ColumnFields
+          DataFields = Get-FieldNames $pvt.DataFields
+          PageFields = Get-FieldNames $pvt.PageFields
         } | ConvertTo-Json -Compress
       `);
       return textContent(parseJSON(raw));
