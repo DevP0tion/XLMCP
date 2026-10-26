@@ -154,13 +154,19 @@ function Resolve-Sheet {
 
 function Invoke-XlmcpDispose {
   # Quit ONLY XLMCP-created (owned) empty instances. NEVER quit a user instance (preserve data).
-  if ($global:excel) {
-    if ($global:XlmcpOwnsExcel) {
-      try { if ((Get-XlmcpWbCount $global:excel) -eq 0) { $global:excel.Quit() } } catch {}
-    }
-    try { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($global:excel) | Out-Null } catch {}
-    $global:excel = $null
+  if ($global:excel -and $global:XlmcpOwnsExcel) {
+    try { if ((Get-XlmcpWbCount $global:excel) -eq 0) { $global:excel.Quit() } } catch {}
   }
+  # Release every COM ref left in global scope (tool scripts leave $wb/$ws/$r...). The process is killed
+  # next; orphaned refs kept a quit Excel alive (observed > 9 min).
+  foreach ($v in @(Get-Variable -Scope Global)) {
+    if ($v.Value -is [System.__ComObject]) {
+      try { [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($v.Value) } catch {}
+      try { $v.Value = $null } catch {}
+    }
+  }
+  $global:excel = $null
+  [GC]::Collect(); [GC]::WaitForPendingFinalizers()
 }
 `;
 

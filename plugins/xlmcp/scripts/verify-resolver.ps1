@@ -181,13 +181,18 @@ function Resolve-Sheet {
 }
 # Disposal (mirrors Session.dispose): quit ONLY harness/XLMCP-created empty instances.
 function Invoke-XlmcpDispose {
-  if ($global:excel) {
-    if ($global:XlmcpOwnsExcel) {
-      try { if ((Get-XlmcpWbCount $global:excel) -eq 0) { $global:excel.Quit() } } catch {}
-    }
-    try { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($global:excel) | Out-Null } catch {}
-    $global:excel = $null
+  if ($global:excel -and $global:XlmcpOwnsExcel) {
+    try { if ((Get-XlmcpWbCount $global:excel) -eq 0) { $global:excel.Quit() } } catch {}
   }
+  # Release every COM ref left in global scope; orphaned refs kept a quit Excel alive.
+  foreach ($v in @(Get-Variable -Scope Global)) {
+    if ($v.Value -is [System.__ComObject]) {
+      try { [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($v.Value) } catch {}
+      try { $v.Value = $null } catch {}
+    }
+  }
+  $global:excel = $null
+  [GC]::Collect(); [GC]::WaitForPendingFinalizers()
 }
 # ====================== XLMCP RESOLVER END (mirrors INIT_SCRIPT) ======================
 
