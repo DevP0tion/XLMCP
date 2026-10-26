@@ -19,7 +19,7 @@ export function register(server: McpServer) {
         $names = @()
         foreach ($ws in $wb.Worksheets) { $names += $ws.Name }
         ConvertTo-Json @($names) -Compress
-      `);
+      `, { retry: true });
       return textContent({ sheets: parseJSON(raw) });
     }
   );

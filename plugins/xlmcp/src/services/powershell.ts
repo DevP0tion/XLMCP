@@ -210,6 +210,10 @@ class Session {
     try {
       const result = await Session.withTimeout(this.ps.invoke(wrapped), timeoutMs);
       return result.raw ?? "";
+    } catch (err) {
+      // 스크립트가 아직 실행 중: busy 해제 전에 사망 표시해 복구 전 다른 작업이 배정되지 않게 함
+      if (Session.isTimeout(err)) this.alive = false;
+      throw err;
     } finally {
       this.busy = false;
     }
@@ -229,15 +233,18 @@ class Session {
     }
   }
 
-  async dispose(): Promise<void> {
-    try {
-      // 정리 invoke에도 타임아웃 적용 (블로킹 PS 방어)
-      // 소유권 기반: 우리가 만든 빈 인스턴스만 Quit. 사용자 인스턴스는 보존(데이터 유실 방지).
-      await Session.withTimeout(
-        this.ps.invoke("if (Get-Command Invoke-XlmcpDispose -ErrorAction SilentlyContinue) { Invoke-XlmcpDispose }"),
-        5000
-      );
-    } catch { /* ignore */ }
+  /** @param force 정리 invoke 생략 (타임아웃 세션: 실행 중 스크립트 뒤에 줄 서서 5초만 낭비) */
+  async dispose(force = false): Promise<void> {
+    if (!force) {
+      try {
+        // 정리 invoke에도 타임아웃 적용 (블로킹 PS 방어)
+        // 소유권 기반: 우리가 만든 빈 인스턴스만 Quit. 사용자 인스턴스는 보존(데이터 유실 방지).
+        await Session.withTimeout(
+          this.ps.invoke("if (Get-Command Invoke-XlmcpDispose -ErrorAction SilentlyContinue) { Invoke-XlmcpDispose }"),
+          5000
+        );
+      } catch { /* ignore */ }
+    }
     try {
       await this.ps.dispose();
     } catch { /* ignore */ }
@@ -249,9 +256,12 @@ class Session {
     return (
       msg.includes("process exited") ||
       msg.includes("invoke called after") ||
-      msg.includes("EPIPE") ||
-      msg.includes("Timeout")
+      msg.includes("EPIPE")
     );
+  }
+
+  static isTimeout(err: unknown): boolean {
+    return err instanceof Error && err.message.startsWith("Timeout:");
   }
 
   static async create(id: number): Promise<Session> {
@@ -423,7 +433,7 @@ class SessionPool {
     }
   }
 
-  // ── 세션에서 실행 (사망 시 1회 재시도) ──
+  // ── 세션에서 실행 (사망 시 1회 재시도, 타임아웃은 retry 지정 시에만) ──
   private async invokeOnSession(
     session: Session,
     script: string,
@@ -437,13 +447,15 @@ class SessionPool {
       this.totalProcessed++;
       return result;
     } catch (err: unknown) {
-      if (session.isProcessDead(err)) {
-        await this.recoverSession(session, isExclusive);
-        // 복구된 세션으로 1회 재시도
+      const timedOut = Session.isTimeout(err);
+      if (timedOut || session.isProcessDead(err)) {
+        // 타임아웃: 스크립트가 아직 실행 중일 수 있으므로 세션을 강제 종료 후 재생성
+        await this.recoverSession(session, isExclusive, timedOut);
+        // 타임아웃된 스크립트는 Excel에 일부 반영됐을 수 있어 재실행은 retry(읽기 전용) 지정 시에만
         const recovered = isExclusive
           ? this.exclusiveSession
           : this.generalPool.find((s) => s.id === session.id);
-        if (recovered && recovered.alive) {
+        if ((!timedOut || opts.retry) && recovered && recovered.alive) {
           try {
             const result = await recovered.invoke(script, timeoutMs);
             this.totalProcessed++;
@@ -453,7 +465,7 @@ class SessionPool {
           }
         }
       }
-      throw SessionPool.formatError(err);
+      throw timedOut ? SessionPool.timeoutError(timeoutMs) : SessionPool.formatError(err);
     } finally {
       if (!isExclusive) {
         this.generalActiveCount--;
@@ -539,8 +551,8 @@ class SessionPool {
   }
 
   // ── 세션 복구 ──
-  private async recoverSession(session: Session, isExclusive: boolean): Promise<void> {
-    await session.dispose();
+  private async recoverSession(session: Session, isExclusive: boolean, force = false): Promise<void> {
+    await session.dispose(force);
     try {
       const newSession = await Session.create(session.id);
       if (isExclusive) {
@@ -652,6 +664,14 @@ class SessionPool {
     }
     return new Error(JSON.stringify({ error: true, message: errorMessage, type: "PowerShellError" }));
   }
+
+  private static timeoutError(ms: number): Error {
+    const message =
+      `Timed out after ${ms}ms. The session was recycled and the script was NOT re-run, ` +
+      `but Excel may have partially applied it. Check the target before retrying. ` +
+      `For large operations raise XLMCP_TIMEOUT_MS (plugin: timeout_ms).`;
+    return new Error(JSON.stringify({ error: true, message, type: "Timeout" }));
+  }
 }
 
 // ── 싱글턴 인스턴스 ──
@@ -662,6 +682,8 @@ export interface RunPSOptions {
   exclusive?: boolean;
   /** Per-call invoke timeout. Default: XLMCP_TIMEOUT_MS / timeout_ms userConfig (30000). */
   timeoutMs?: number;
+  /** Safe to re-run once after a timeout (read-only scripts only). */
+  retry?: boolean;
 }
 
 export async function runPS(script: string, options: RunPSOptions = {}): Promise<string> {

@@ -30,7 +30,7 @@ export function register(server: McpServer) {
           Text = $c.Text
           NumberFormat = $c.NumberFormat
         } | ConvertTo-Json -Compress
-      `);
+      `, { retry: true });
       return textContent(parseJSON(raw));
     }
   );

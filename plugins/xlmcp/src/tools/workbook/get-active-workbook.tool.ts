@@ -23,7 +23,7 @@ export function register(server: McpServer) {
           ActiveSheet = $wb.ActiveSheet.Name
           VbaAccessTrusted = $vbaTrusted
         } | ConvertTo-Json -Compress
-      `);
+      `, { retry: true });
       return textContent(parseJSON(raw));
     }
   );

@@ -45,7 +45,7 @@ export function register(server: McpServer) {
           StartCol = $r.Column
           Address = $r.Address()
         } | ConvertTo-Json -Compress
-      `);
+      `, { retry: true });
       const meta = parseJSON<{
         Rows: number; Cols: number; StartRow: number; StartCol: number; Address: string;
       }>(metaRaw);
@@ -81,7 +81,7 @@ async function readFormulaSingle(
       ${buildReadScript(rows, cols)}
       $json = ConvertTo-Json @($data) -Depth 5 -Compress
       [System.IO.File]::WriteAllText('${escapedPath}', $json, (New-Object System.Text.UTF8Encoding $false))
-    `);
+    `, { retry: true });
     return JSON.parse(readFileSync(tmpPath, "utf-8"));
   } finally {
     try { unlinkSync(tmpPath); } catch { /* ignore */ }
@@ -122,7 +122,7 @@ async function readFormulaChunked(
       $wb = Resolve-Workbook ${wbName}
       $ws = Resolve-Sheet $wb ${shName}
       ${chunkScripts}
-    `);
+    `, { retry: true });
 
     const allData: unknown[][] = [];
     for (const f of tmpFiles) {

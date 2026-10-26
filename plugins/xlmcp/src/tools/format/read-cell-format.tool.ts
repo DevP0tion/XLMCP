@@ -91,7 +91,7 @@ export function register(server: McpServer) {
           MergeCells = [bool]$c.MergeCells
           Borders = $borders
         } | ConvertTo-Json -Depth 5 -Compress
-      `);
+      `, { retry: true });
       return textContent(parseJSON(raw));
     }
   );

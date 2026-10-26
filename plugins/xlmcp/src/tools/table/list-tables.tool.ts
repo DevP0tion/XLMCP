@@ -32,7 +32,7 @@ export function register(server: McpServer) {
           }
         }
         ConvertTo-Json @($tables) -Depth 3 -Compress
-      `);
+      `, { retry: true });
       return textContent(parseJSON(raw));
     }
   );

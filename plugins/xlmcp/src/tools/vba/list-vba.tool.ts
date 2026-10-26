@@ -37,7 +37,7 @@ export function register(server: McpServer) {
             Lines = $cm.CountOfLines
             Code = $code
           } | ConvertTo-Json -Depth 3 -Compress
-        `);
+        `, { retry: true });
         const parsed = parseJSON<{ Name: string; Type: number; Lines: number; Code: string }>(raw);
         return textContent({
           ...parsed,
@@ -57,7 +57,7 @@ export function register(server: McpServer) {
           }
         }
         ConvertTo-Json @($list) -Depth 3 -Compress
-      `);
+      `, { retry: true });
       const parsed = parseJSON<Array<{ Name: string; Type: number; Lines: number }>>(raw);
       return textContent(
         parsed.map((m) => ({

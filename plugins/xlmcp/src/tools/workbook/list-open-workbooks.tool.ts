@@ -22,7 +22,7 @@ export function register(server: McpServer) {
           }
           "[" + ($result -join ",") + "]"
         }
-      `);
+      `, { retry: true });
       return textContent(parseJSON(raw));
     }
   );

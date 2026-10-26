@@ -35,7 +35,7 @@ export function register(server: McpServer) {
           }
         }
         ConvertTo-Json @($imgs) -Depth 3 -Compress
-      `);
+      `, { retry: true });
       return textContent(parseJSON(raw));
     }
   );
