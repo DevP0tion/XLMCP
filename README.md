@@ -36,6 +36,7 @@ Excel을 직접 제어하는 MCP 서버.
 | 변수 | 기본값 | 설명 |
 |---|---|---|
 | `XLMCP_POOL_SIZE` | `4` | PowerShell 세션 풀 크기 (General Pool). 최소 1 |
+| `XLMCP_TIMEOUT_MS` | `30000` | PowerShell 호출 1회당 타임아웃(ms). 대용량 읽기·쓰기 시 상향. 플러그인은 `timeout_ms` 설정 |
 
 ```json
 "excel": {

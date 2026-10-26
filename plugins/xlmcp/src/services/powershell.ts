@@ -4,7 +4,7 @@ import { env } from "./env.js";
 // ── 설정 ──
 const POOL_SIZE = Math.max(1, parseInt(env("POOL_SIZE") ?? "4", 10) || 4);
 const HEARTBEAT_INTERVAL = 10_000;
-const INVOKE_TIMEOUT = 30_000;
+const INVOKE_TIMEOUT = Math.max(1, parseInt(env("TIMEOUT_MS") ?? "30000", 10) || 30_000);
 
 // ── PS 초기화 스크립트 ──
 // attach-only / 워크북 보유 인스턴스 우선 / 유령-안전 리졸버.
@@ -282,6 +282,7 @@ class Session {
 interface QueuedTask {
   id: number;
   script: string;
+  opts: RunPSOptions;
   resolve: (v: string) => void;
   reject: (e: Error) => void;
   enqueuedAt: number;
@@ -301,6 +302,7 @@ class SessionPool {
   private exclusiveRunning = false;
   private exclusiveQueue: Array<{
     script: string;
+    opts: RunPSOptions;
     resolve: (v: string) => void;
     reject: (e: Error) => void;
   }> = [];
@@ -345,7 +347,7 @@ class SessionPool {
   }
 
   // ── 일반 실행 ──
-  async executeGeneral(script: string): Promise<string> {
+  async executeGeneral(script: string, opts: RunPSOptions): Promise<string> {
     await this.init();
     if (this.exclusiveRunning) {
       await this.waitForExclusiveEnd();
@@ -354,7 +356,7 @@ class SessionPool {
     // 유휴 세션 탐색
     const idle = this.findIdle();
     if (idle) {
-      return this.invokeOnSession(idle, script, false);
+      return this.invokeOnSession(idle, script, false, opts);
     }
 
     // 상한 미도달 → 새 세션 생성 (pendingCreations로 동시 생성 경합 방지)
@@ -363,7 +365,7 @@ class SessionPool {
       try {
         const newSession = await Session.create(this.nextGeneralId++);
         this.generalPool.push(newSession);
-        return this.invokeOnSession(newSession, script, false);
+        return this.invokeOnSession(newSession, script, false, opts);
       } catch (err) {
         this.nextGeneralId--;
         throw err;
@@ -375,22 +377,22 @@ class SessionPool {
     // 상한 도달 → 큐에 대기
     this.totalQueued++;
     return new Promise<string>((resolve, reject) => {
-      this.generalQueue.push({ id: this.nextTaskId++, script, resolve, reject, enqueuedAt: Date.now() });
+      this.generalQueue.push({ id: this.nextTaskId++, script, opts, resolve, reject, enqueuedAt: Date.now() });
     });
   }
 
   // ── exclusive 실행 ──
-  async executeExclusive(script: string): Promise<string> {
+  async executeExclusive(script: string, opts: RunPSOptions): Promise<string> {
     await this.init();
     if (this.exclusiveRunning) {
       return new Promise<string>((resolve, reject) => {
-        this.exclusiveQueue.push({ script, resolve, reject });
+        this.exclusiveQueue.push({ script, opts, resolve, reject });
       });
     }
-    return this.runExclusive(script);
+    return this.runExclusive(script, opts);
   }
 
-  private async runExclusive(script: string): Promise<string> {
+  private async runExclusive(script: string, opts: RunPSOptions): Promise<string> {
     this.exclusiveRunning = true;
     if (this.generalActiveCount > 0) {
       await new Promise<void>((resolve) => {
@@ -398,7 +400,7 @@ class SessionPool {
       });
     }
     try {
-      return await this.invokeOnSession(this.exclusiveSession!, script, true);
+      return await this.invokeOnSession(this.exclusiveSession!, script, true, opts);
     } finally {
       const next = this.exclusiveQueue.shift();
 
@@ -408,11 +410,11 @@ class SessionPool {
         this.signalExclusiveEnd();
         this.flushGeneralQueue();
         this.waitForGeneralQuiet().then(() => {
-          this.runExclusive(next.script).then(next.resolve, next.reject);
+          this.runExclusive(next.script, next.opts).then(next.resolve, next.reject);
         });
       } else if (next) {
         // general 큐 없음: 바로 다음 exclusive 실행
-        this.runExclusive(next.script).then(next.resolve, next.reject);
+        this.runExclusive(next.script, next.opts).then(next.resolve, next.reject);
       } else {
         this.exclusiveRunning = false;
         this.signalExclusiveEnd();
@@ -425,11 +427,13 @@ class SessionPool {
   private async invokeOnSession(
     session: Session,
     script: string,
-    isExclusive: boolean
+    isExclusive: boolean,
+    opts: RunPSOptions
   ): Promise<string> {
+    const timeoutMs = opts.timeoutMs ?? INVOKE_TIMEOUT;
     if (!isExclusive) this.generalActiveCount++;
     try {
-      const result = await session.invoke(script, INVOKE_TIMEOUT);
+      const result = await session.invoke(script, timeoutMs);
       this.totalProcessed++;
       return result;
     } catch (err: unknown) {
@@ -441,7 +445,7 @@ class SessionPool {
           : this.generalPool.find((s) => s.id === session.id);
         if (recovered && recovered.alive) {
           try {
-            const result = await recovered.invoke(script, INVOKE_TIMEOUT);
+            const result = await recovered.invoke(script, timeoutMs);
             this.totalProcessed++;
             return result;
           } catch {
@@ -475,7 +479,7 @@ class SessionPool {
     if (freedSession.busy || !freedSession.alive) return;
 
     const task = this.generalQueue.shift()!;
-    this.invokeOnSession(freedSession, task.script, false)
+    this.invokeOnSession(freedSession, task.script, false, task.opts)
       .then(task.resolve, task.reject);
   }
 
@@ -486,7 +490,7 @@ class SessionPool {
       if (this.generalQueue.length === 0) break;
       if (!session.busy && session.alive) {
         const task = this.generalQueue.shift()!;
-        this.invokeOnSession(session, task.script, false)
+        this.invokeOnSession(session, task.script, false, task.opts)
           .then(task.resolve, task.reject);
       }
     }
@@ -656,11 +660,13 @@ const pool = new SessionPool();
 // ── 외부 API ──
 export interface RunPSOptions {
   exclusive?: boolean;
+  /** Per-call invoke timeout. Default: XLMCP_TIMEOUT_MS / timeout_ms userConfig (30000). */
+  timeoutMs?: number;
 }
 
-export async function runPS(script: string, options?: RunPSOptions): Promise<string> {
-  if (options?.exclusive) return pool.executeExclusive(script);
-  return pool.executeGeneral(script);
+export async function runPS(script: string, options: RunPSOptions = {}): Promise<string> {
+  if (options.exclusive) return pool.executeExclusive(script, options);
+  return pool.executeGeneral(script, options);
 }
 
 export function getPoolStatus() {

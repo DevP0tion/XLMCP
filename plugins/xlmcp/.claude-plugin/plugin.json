@@ -9,6 +9,13 @@
       "type": "string",
       "required": false,
       "default": "4"
+    },
+    "timeout_ms": {
+      "title": "Timeout (ms)",
+      "description": "Per-call PowerShell timeout in milliseconds. Raise for very large reads/writes",
+      "type": "string",
+      "required": false,
+      "default": "30000"
     }
   }
 }
