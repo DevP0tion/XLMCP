@@ -8,7 +8,7 @@ import { runPS } from "../../services/powershell.js";
 import { psEscape, textContent, parseJSON } from "../../services/utils.js";
 import { workbookParam, sheetParam } from "../../schemas/common.js";
 
-const DEFAULT_CHUNK_SIZE = 30;
+const DEFAULT_CHUNK_SIZE = 500;
 
 interface FormulaEntry {
   rowOffset: number;
@@ -30,7 +30,7 @@ export function register(server: McpServer) {
         data: z
           .array(z.array(z.string()))
           .describe("2D array data. Each inner array is one row"),
-        chunkSize: z.number().int().optional().describe("Chunk size in rows for parallel write. Default 30"),
+        chunkSize: z.number().int().optional().describe("Chunk size in rows for parallel write. Default 500"),
       },
       annotations: { readOnlyHint: false, destructiveHint: false },
     },

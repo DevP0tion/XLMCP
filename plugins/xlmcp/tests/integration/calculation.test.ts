@@ -35,7 +35,8 @@ describeExcel("calculation mode is restored after bulk writes (Excel)", () => {
   });
 
   test("copy_paste_range of 40 rows keeps manual calculation", async () => {
-    await callTool("excel_copy_paste_range", { workbook: s.name, sheet: "Sheet1", sourceRange: "A1:B40", destCell: "D1" });
+    // chunkSize below the row count: only the chunked path toggles Calculation
+    await callTool("excel_copy_paste_range", { workbook: s.name, sheet: "Sheet1", sourceRange: "A1:B40", destCell: "D1", chunkSize: 30 });
     expect(await appState()).toEqual({ calc: XL_MANUAL, su: original.su });
   });
 });

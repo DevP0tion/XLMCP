@@ -8,7 +8,7 @@ import { runPS } from "../../services/powershell.js";
 import { psEscape, textContent, parseJSON } from "../../services/utils.js";
 import { workbookParam, sheetParam } from "../../schemas/common.js";
 
-const DEFAULT_CHUNK_SIZE = 30;
+const DEFAULT_CHUNK_SIZE = 500;
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -21,7 +21,7 @@ export function register(server: McpServer) {
         workbook: workbookParam,
         sheet: sheetParam,
         range: z.string().optional().describe("Range address (e.g. A1:C10). UsedRange if omitted"),
-        chunkSize: z.number().int().optional().describe("Chunk size in rows. Default 30"),
+        chunkSize: z.number().int().optional().describe("Chunk size in rows. Default 500"),
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },

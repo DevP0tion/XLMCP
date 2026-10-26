@@ -9,7 +9,7 @@ import { psEscape, textContent, parseJSON } from "../../services/utils.js";
 import { workbookParam, sheetParam } from "../../schemas/common.js";
 import { captureAppState } from "../cell/write-range.tool.js";
 
-const DEFAULT_CHUNK_SIZE = 30;
+const DEFAULT_CHUNK_SIZE = 500;
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -27,7 +27,7 @@ export function register(server: McpServer) {
           .enum(["values", "formulas"])
           .default("values")
           .describe("values: computed values. formulas: original formulas"),
-        chunkSize: z.number().int().optional().describe("Chunk size in rows. Default 30"),
+        chunkSize: z.number().int().optional().describe("Chunk size in rows. Default 500"),
       },
       annotations: { readOnlyHint: false, destructiveHint: false },
     },
