@@ -35,12 +35,19 @@ export function register(server: McpServer) {
 
       if (replace !== undefined) {
         // Replace(What, Replacement, LookAt, SearchOrder=xlByRows, MatchCase, MatchByte, SearchFormat, ReplaceFormat)
+        // COM's Boolean result is True even when nothing changed (e.g. protected sheet), so count changed
+        // cells by diffing the formula text (what Replace searches) before and after.
         const raw = await runPS(`
           $wb = Resolve-Workbook ${wbName}
           $ws = Resolve-Sheet $wb ${shName}
+          if ($ws.ProtectContents) { throw "Sheet '$($ws.Name)' is protected. Unprotect it before replacing." }
           $r = ${rangeExpr}
-          $replaced = $r.Replace('${psEscape(find)}', '${psEscape(replace)}', ${LOOK_AT[lookAt]}, 1, ${mc}, $false, $false, $false)
-          @{ Success = $replaced } | ConvertTo-Json -Compress
+          $before = @($r.Formula)
+          [void]$r.Replace('${psEscape(find)}', '${psEscape(replace)}', ${LOOK_AT[lookAt]}, 1, ${mc}, $false, $false, $false)
+          $after = @($r.Formula)
+          $n = 0
+          for ($k = 0; $k -lt $before.Count; $k++) { if ($before[$k] -cne $after[$k]) { $n++ } }
+          @{ Success = $true; Replaced = $n } | ConvertTo-Json -Compress
         `);
         return textContent(parseJSON(raw));
       } else {
