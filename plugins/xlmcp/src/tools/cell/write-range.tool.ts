@@ -45,75 +45,46 @@ export function register(server: McpServer) {
       const wbName = workbook ? `'${psEscape(workbook)}'` : '""';
       const shName = sheet ? `'${psEscape(sheet)}'` : '""';
 
-      // 소규모: 기존 인라인 방식
-      if (rows < chunkSize) {
-        return writeInline(wbName, shName, startCell, data, rows, cols);
-      }
-
-      // 대규모: 청크 분할 + 임시 파일 + 병렬 쓰기
+      // 모든 크기: 청크 분할 + JSON 임시 파일 (인라인 경로는 1행 데이터를 잘못 펼쳐 제거)
       return writeChunked(wbName, shName, startCell, data, rows, cols, chunkSize);
     }
   );
 }
 
-// ── 소규모: 인라인 (기존 방식) ──
-async function writeInline(
-  wbName: string,
-  shName: string,
-  startCell: string,
-  data: string[][],
-  rows: number,
-  cols: number
-) {
+/**
+ * Write one block of cells to a JSON temp file and return the PS fragment that loads it into $arr
+ * (object[rows,cols]). Formulas are returned separately and left $null in $arr.
+ */
+export function buildFill(data: string[][], rowOffset = 0): { script: string; formulas: FormulaEntry[]; tmpFile: string } {
+  const rows = data.length;
+  const cols = data[0]?.length ?? 0;
   const formulas: FormulaEntry[] = [];
-  // TS에서 숫자 감지 (chunked와 동일한 Number() 사용)
-  const psRows = data
-    .map((row, ri) => {
-      const cells = row.map((v, ci) => {
-        if (v.startsWith("=")) {
-          formulas.push({ rowOffset: ri, colOffset: ci, formula: v });
-          return "$null";
-        }
-        const num = Number(v);
-        if (v !== "" && !isNaN(num)) {
-          return String(num);
-        }
-        return `'${psEscape(v)}'`;
-      });
-      return `@(${cells.join(",")})`;
-    })
-    .join(",");
-
-  const formulaCmds = formulas
-    .map(
-      (f) =>
-        `$ws.Cells.Item($start.Row + ${f.rowOffset}, $start.Column + ${f.colOffset}).Formula = '${psEscape(f.formula)}'`
-    )
-    .join("\n        ");
-
-  await runPS(`
-    $wb = Resolve-Workbook ${wbName}
-    $ws = Resolve-Sheet $wb ${shName}
-    $start = $ws.Range('${psEscape(startCell)}')
-    $endRow = $start.Row + ${rows} - 1
-    $endCol = $start.Column + ${cols} - 1
-    $targetRange = $ws.Range($start, $ws.Cells.Item($endRow, $endCol))
-    $arr = New-Object 'object[,]' ${rows},${cols}
-    $srcData = @(${psRows})
-    for ($i = 0; $i -lt ${rows}; $i++) {
-      $row = @($srcData[$i])
-      for ($j = 0; $j -lt ${cols}; $j++) {
-        $arr[$i,$j] = $row[$j]
+  const values = data.map((row, ri) =>
+    row.map((v, ci) => {
+      if (v.startsWith("=")) {
+        formulas.push({ rowOffset: rowOffset + ri, colOffset: ci, formula: v });
+        return null;
       }
-    }
-    $targetRange.Value2 = $arr
-    ${formulaCmds}
-  `);
-
-  return textContent({ success: true, rows, cols });
+      const num = Number(v);
+      return v !== "" && !isNaN(num) ? num : v;
+    })
+  );
+  const tmpFile = join(tmpdir(), `xlmcp_chunk_${randomUUID()}.json`);
+  writeFileSync(tmpFile, JSON.stringify(values));
+  const script = `
+        $json = Get-Content '${psEscape(tmpFile)}' -Raw -Encoding UTF8
+        $data = $json | ConvertFrom-Json
+        $arr = New-Object 'object[,]' ${rows},${cols}
+        for ($i = 0; $i -lt ${rows}; $i++) {
+          for ($j = 0; $j -lt ${cols}; $j++) {
+            $v = $data[$i][$j]
+            if ($v -ne $null) { $arr[$i,$j] = $v }
+          }
+        }`;
+  return { script, formulas, tmpFile };
 }
 
-// ── 대규모: 청크 분할 + 임시 파일 + 순차 ──
+// ── 청크 분할 + 임시 파일 + 순차 ──
 async function writeChunked(
   wbName: string,
   shName: string,
@@ -123,66 +94,26 @@ async function writeChunked(
   cols: number,
   chunkSize: number
 ) {
-  // 청크 분할
-  const chunks: { rowOffset: number; chunkData: (string | number | null)[][] }[] = [];
-  const formulas: FormulaEntry[] = [];
-
+  // 청크 분할 (각 청크는 자체 JSON 임시 파일)
+  const chunks: { rowOffset: number; chunkRows: number; fill: ReturnType<typeof buildFill> }[] = [];
   for (let offset = 0; offset < rows; offset += chunkSize) {
-    const end = Math.min(offset + chunkSize, rows);
-    const chunkData: (string | number | null)[][] = [];
-
-    for (let ri = offset; ri < end; ri++) {
-      const row: (string | number | null)[] = [];
-      for (let ci = 0; ci < cols; ci++) {
-        const v = data[ri][ci];
-        if (v.startsWith("=")) {
-          formulas.push({ rowOffset: ri, colOffset: ci, formula: v });
-          row.push(null);
-        } else {
-          const num = Number(v);
-          row.push(v !== "" && !isNaN(num) ? num : v);
-        }
-      }
-      chunkData.push(row);
-    }
-
-    chunks.push({ rowOffset: offset, chunkData });
+    const chunkData = data.slice(offset, offset + chunkSize);
+    chunks.push({ rowOffset: offset, chunkRows: chunkData.length, fill: buildFill(chunkData, offset) });
   }
-
-  // 임시 파일 생성
-  const tmpFiles: string[] = [];
-  const batchId = randomUUID();
-
-  for (let i = 0; i < chunks.length; i++) {
-    const filePath = join(tmpdir(), `xlmcp_chunk_${batchId}_${i}.json`);
-    writeFileSync(filePath, JSON.stringify(chunks[i].chunkData));
-    tmpFiles.push(filePath);
-  }
+  const formulas = chunks.flatMap((c) => c.fill.formulas);
 
   try {
     const chunkScripts = chunks
-      .map((chunk, i) => {
-        const chunkRows = chunk.chunkData.length;
-        const tmpPath = tmpFiles[i].replace(/\\/g, "\\\\");
-        return `
+      .map((chunk) => `
         $chunkStart = $ws.Cells.Item($start.Row + ${chunk.rowOffset}, $start.Column)
-        $chunkEnd = $ws.Cells.Item($start.Row + ${chunk.rowOffset} + ${chunkRows} - 1, $start.Column + ${cols} - 1)
+        $chunkEnd = $ws.Cells.Item($start.Row + ${chunk.rowOffset} + ${chunk.chunkRows} - 1, $start.Column + ${cols} - 1)
         $targetRange = $ws.Range($chunkStart, $chunkEnd)
-        $json = Get-Content '${tmpPath}' -Raw -Encoding UTF8
-        $data = $json | ConvertFrom-Json
-        $arr = New-Object 'object[,]' ${chunkRows},${cols}
-        for ($i = 0; $i -lt ${chunkRows}; $i++) {
-          for ($j = 0; $j -lt ${cols}; $j++) {
-            $v = $data[$i][$j]
-            if ($v -ne $null) { $arr[$i,$j] = $v }
-          }
-        }
+        ${chunk.fill.script}
         $targetRange.Value2 = $arr
         [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($targetRange)
         [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($chunkEnd)
         [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($chunkStart)
-        $targetRange = $null; $chunkEnd = $null; $chunkStart = $null`;
-      })
+        $targetRange = $null; $chunkEnd = $null; $chunkStart = $null`)
       .join("\n");
 
     const formulaCmds =
@@ -210,9 +141,9 @@ async function writeChunked(
       }
     `);
   } finally {
-    for (const f of tmpFiles) {
+    for (const c of chunks) {
       try {
-        unlinkSync(f);
+        unlinkSync(c.fill.tmpFile);
       } catch {
         // ignore
       }
