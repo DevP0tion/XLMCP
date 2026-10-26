@@ -72,9 +72,18 @@ export function withAlertsOff(cmd: string): string {
         }`;
 }
 
-/** MCP text content 래퍼 */
+/** MCP text content 래퍼: compact JSON, a top-level Data 2D array gets one row per line. */
 export function textContent(data: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
+  return { content: [{ type: "text" as const, text: toJSON(data) }] };
+}
+
+function toJSON(data: unknown): string {
+  const d = data as { Data?: unknown };
+  if (!d || typeof d !== "object" || !Array.isArray(d.Data) || d.Data.length === 0) return JSON.stringify(data);
+  const { Data, ...rest } = d as { Data: unknown[] };
+  const head = JSON.stringify(rest).slice(0, -1); // drop the closing brace
+  const rows = Data.map((r) => JSON.stringify(r)).join(",\n");
+  return `${head}${head.length > 1 ? "," : ""}"Data":[\n${rows}\n]}`;
 }
 
 /** hex RGB → [r, g, b] 변환 */
