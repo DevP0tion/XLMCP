@@ -15,4 +15,19 @@ describeExcel("excel_write_range (Excel)", () => {
     const res = await callTool("excel_read_range", { workbook: s.name, sheet: "Sheet1", range: "A1:M1" });
     expect(res.Data).toEqual([row]);
   });
+
+  // P1-4: formulas were assigned one cell (one COM call + one script line) at a time.
+  test("200 formula cells read back as written", async () => {
+    const data = Array.from({ length: 200 }, (_, i) => [String(i), `=A${i + 3}*2`]);
+    await callTool("excel_write_range", { workbook: s.name, sheet: "Sheet1", startCell: "A3", data });
+    const res = await callTool("excel_read_range_formulas", { workbook: s.name, sheet: "Sheet1", range: "B3:B202" });
+    expect(res.Data.map((r: unknown[]) => r[0])).toEqual(data.map((r) => r[1]));
+  });
+
+  test("2000 formula cells are written in bulk (< 1.5 s)", async () => {
+    const data = Array.from({ length: 2000 }, (_, i) => [`=ROW()+${i}`]);
+    const t = Date.now();
+    await callTool("excel_write_range", { workbook: s.name, sheet: "Sheet1", startCell: "D1", data });
+    expect(Date.now() - t).toBeLessThan(1500);
+  });
 });

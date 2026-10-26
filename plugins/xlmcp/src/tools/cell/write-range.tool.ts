@@ -84,6 +84,19 @@ export function buildFill(data: string[][], rowOffset = 0): { script: string; fo
   return { script, formulas, tmpFile };
 }
 
+/** Group formula cells into vertical runs (same column, consecutive rows); each run is one Range.Formula assignment. */
+export function formulaRuns(formulas: FormulaEntry[]): { r: number; c: number; f: string[] }[] {
+  // shortcut: vertical runs only; a formula row spanning columns costs one assignment per cell. Merge into rectangles if that gets common.
+  const sorted = [...formulas].sort((a, b) => a.colOffset - b.colOffset || a.rowOffset - b.rowOffset);
+  const runs: { r: number; c: number; f: string[] }[] = [];
+  for (const e of sorted) {
+    const last = runs[runs.length - 1];
+    if (last && last.c === e.colOffset && last.r + last.f.length === e.rowOffset) last.f.push(e.formula);
+    else runs.push({ r: e.rowOffset, c: e.colOffset, f: [e.formula] });
+  }
+  return runs;
+}
+
 /**
  * Read the user's Calculation / ScreenUpdating (instance-wide settings) before a bulk write and return
  * the PS statement that restores them. Captured in TS so a fallback can restore after a dead session.
@@ -113,6 +126,9 @@ async function writeChunked(
     chunks.push({ rowOffset: offset, chunkRows: chunkData.length, fill: buildFill(chunkData, offset) });
   }
   const formulas = chunks.flatMap((c) => c.fill.formulas);
+  // 수식은 연속 블록 단위 JSON → Range.Formula 대입 (상수는 .Formula로 보내지 않음: 입력처럼 해석됨)
+  const formulaFile = formulas.length > 0 ? join(tmpdir(), `xlmcp_formulas_${randomUUID()}.json`) : "";
+  if (formulaFile) writeFileSync(formulaFile, JSON.stringify(formulaRuns(formulas)));
 
   try {
     const chunkScripts = chunks
@@ -130,15 +146,18 @@ async function writeChunked(
         $targetRange = $null; $chunkEnd = $null; $chunkStart = $null`)
       .join("\n");
 
-    const formulaCmds =
-      formulas.length > 0
-        ? formulas
-            .map(
-              (f) =>
-                `$ws.Cells.Item($start.Row + ${f.rowOffset}, $start.Column + ${f.colOffset}).Formula = '${psEscape(f.formula)}'`
-            )
-            .join("\n        ")
-        : "";
+    const formulaCmds = formulaFile
+      ? `
+          $runs = Get-Content '${psEscape(formulaFile)}' -Raw -Encoding UTF8 | ConvertFrom-Json
+          foreach ($run in @($runs)) {
+            $fs = @($run.f)
+            $fa = New-Object 'object[,]' $fs.Count,1
+            for ($k = 0; $k -lt $fs.Count; $k++) { $fa[$k,0] = $fs[$k] }
+            $fr = $ws.Range($ws.Cells.Item($start.Row + $run.r, $start.Column + $run.c), $ws.Cells.Item($start.Row + $run.r + $fs.Count - 1, $start.Column + $run.c))
+            $fr.Formula = $fa
+            [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($fr); $fr = $null
+          }`
+      : "";
 
     const restore = await captureAppState(wbName);
     try {
@@ -162,9 +181,9 @@ async function writeChunked(
       throw err;
     }
   } finally {
-    for (const c of chunks) {
+    for (const f of [...chunks.map((c) => c.fill.tmpFile), formulaFile].filter(Boolean)) {
       try {
-        unlinkSync(c.fill.tmpFile);
+        unlinkSync(f);
       } catch {
         // ignore
       }

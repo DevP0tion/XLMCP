@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { existsSync, unlinkSync } from "fs";
-import { buildFill } from "../../src/tools/cell/write-range.tool.js";
+import { buildFill, formulaRuns } from "../../src/tools/cell/write-range.tool.js";
 import { runPowerShell } from "../helpers/ps.js";
 
 /** Run write_range's fill fragment in PS 5.1 and return $arr as { value, type } cells. */
@@ -42,4 +42,13 @@ test("Nx1 column keeps every cell", () => {
 
 test("NxM block keeps every cell", () => {
   expect(runFill([["A", "B"], ["C", "D"]]).values).toEqual([["A", "B"], ["C", "D"]]);
+});
+
+// P1-4: formulas are assigned per vertical run, not per cell.
+test("formula cells group into vertical runs", () => {
+  const f = (rowOffset: number, colOffset: number) => ({ rowOffset, colOffset, formula: `=R${rowOffset}C${colOffset}` });
+  expect(formulaRuns([f(0, 1), f(1, 1), f(3, 1), f(0, 2), f(2, 1)])).toEqual([
+    { r: 0, c: 1, f: ["=R0C1", "=R1C1", "=R2C1", "=R3C1"] },
+    { r: 0, c: 2, f: ["=R0C2"] },
+  ]);
 });
