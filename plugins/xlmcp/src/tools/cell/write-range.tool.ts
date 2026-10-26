@@ -7,6 +7,8 @@ import { randomUUID } from "crypto";
 import { runPS } from "../../services/powershell.js";
 import { psEscape, textContent, parseJSON } from "../../services/utils.js";
 import { workbookParam, sheetParam } from "../../schemas/common.js";
+import { readRange } from "./read-range.tool.js";
+import { colNumToLetter } from "../data/insert-delete-rows-cols.tool.js";
 
 const DEFAULT_CHUNK_SIZE = 500;
 
@@ -49,11 +51,12 @@ export function register(server: McpServer) {
           .array(z.array(z.union([z.string(), z.number(), z.boolean(), z.null()])))
           .describe("2D array data. Each inner array is one row"),
         formulas: z.boolean().default(true).describe("Treat strings starting with = as formulas. false writes them as text"),
+        verify: z.boolean().default(false).describe("Read back and return { mismatches, first: up to 5 {cell, expected, actual} }"),
         chunkSize: z.number().int().optional().describe("Chunk size in rows. Default 500"),
       },
       annotations: { readOnlyHint: false, destructiveHint: false },
     },
-    async ({ workbook, sheet, startCell, data, formulas, chunkSize: cs }) => {
+    async ({ workbook, sheet, startCell, data, formulas, verify, chunkSize: cs }) => {
       const chunkSize = cs ?? DEFAULT_CHUNK_SIZE;
       const rows = data.length;
       const cols = data[0]?.length ?? 0;
@@ -65,9 +68,52 @@ export function register(server: McpServer) {
       const shName = sheet ? `'${psEscape(sheet)}'` : '""';
 
       // 모든 크기: 청크 분할 + JSON 임시 파일 (인라인 경로는 1행 데이터를 잘못 펼쳐 제거)
-      return writeChunked(wbName, shName, startCell, data, rows, cols, chunkSize, formulas);
+      const result = await writeChunked(wbName, shName, startCell, data, rows, cols, chunkSize, formulas);
+      if (!verify) return textContent(result);
+      const check = await verifyWrite(wbName, shName, startCell, data, rows, cols, chunkSize, formulas);
+      return textContent({ ...result, verify: check });
     }
   );
+}
+
+/** Read the written range back and compare it with the normalized input. */
+async function verifyWrite(
+  wbName: string,
+  shName: string,
+  startCell: string,
+  data: CellInput[][],
+  rows: number,
+  cols: number,
+  chunkSize: number,
+  formulasOn: boolean
+) {
+  const isFormula = (v: CellInput): v is string => formulasOn && typeof v === "string" && v.startsWith("=");
+  const rangeExpr = `$ws.Range('${psEscape(startCell)}').Resize(${rows}, ${cols})`;
+  const values = await readRange(wbName, shName, rangeExpr, chunkSize);
+  const formulaText = data.some((r) => r.some(isFormula))
+    ? await readRange(wbName, shName, rangeExpr, chunkSize, "Formula")
+    : undefined;
+  const mismatches: { cell: string; expected: unknown; actual: unknown }[] = [];
+  data.forEach((row, i) =>
+    row.forEach((v, j) => {
+      let expected: unknown, actual: unknown, same: boolean;
+      if (isFormula(v)) {
+        // shortcut: Excel upper-cases function names and refs; case inside string literals is not compared
+        expected = v;
+        actual = formulaText!.Data[i]?.[j];
+        same = String(actual).toUpperCase() === v.toUpperCase();
+      } else {
+        const c = toCell(v);
+        expected = typeof c === "string" ? v : c; // text is stored verbatim; the ' prefix is not part of it
+        actual = values.Data[i]?.[j];
+        same = actual === expected;
+      }
+      if (!same) mismatches.push({ cell: `${colNumToLetter(values.StartCol + j)}${values.StartRow + i}`, expected, actual });
+    })
+  );
+  const clip = (v: unknown) => (typeof v === "string" && v.length > 100 ? `${v.slice(0, 100)}… (${v.length} chars)` : v);
+  const first = mismatches.slice(0, 5).map((m) => ({ ...m, expected: clip(m.expected), actual: clip(m.actual) }));
+  return { mismatches: mismatches.length, first };
 }
 
 /**
@@ -213,11 +259,11 @@ async function writeChunked(
     }
   }
 
-  return textContent({
+  return {
     success: true,
     rows,
     cols,
     chunks: chunks.length,
     mode: "serial",
-  });
+  };
 }

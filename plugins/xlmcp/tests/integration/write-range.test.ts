@@ -43,6 +43,23 @@ describeExcel("excel_write_range (Excel)", () => {
     expect(res.trim()).toBe("=1+1|False");
   });
 
+  // P2-3: verify reads back Value2 (and .Formula for formula cells) instead of the caller re-reading everything.
+  test("verify: a faithful write reports no mismatches", async () => {
+    const data = [["0852", 12, "=B330*2", null], ["a\nb", true, "=sum(b331:b331)", "1/2"]];
+    const res = await callTool("excel_write_range", { workbook: s.name, sheet: "Sheet1", startCell: "A330", data, verify: true });
+    expect(res.verify).toEqual({ mismatches: 0, first: [] });
+  });
+
+  test("verify: a value Excel changed is reported briefly with its cell", async () => {
+    // Excel silently truncates cell text to 32,767 characters
+    const res = await callTool("excel_write_range", {
+      workbook: s.name, sheet: "Sheet1", startCell: "A340", data: [["ok", "x".repeat(40000)]], verify: true,
+    });
+    expect(res.verify.mismatches).toBe(1);
+    expect(res.verify.first[0].cell).toBe("B340");
+    expect(JSON.stringify(res.verify).length).toBeLessThan(1000);
+  });
+
   // P1-4: formulas were assigned one cell (one COM call + one script line) at a time.
   test("200 formula cells read back as written", async () => {
     const data = Array.from({ length: 200 }, (_, i) => [String(i), `=A${i + 3}*2`]);
