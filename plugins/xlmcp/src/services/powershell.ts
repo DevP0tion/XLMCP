@@ -115,7 +115,6 @@ function Ensure-Excel {
   $wbApp = Find-WorkbookBearingExcel
   if ($wbApp) {
     $global:excel = $wbApp
-    try { $global:excel.DisplayAlerts = $false } catch {}
     return $global:excel
   }
   if ($AllowCreate) {
@@ -125,7 +124,6 @@ function Ensure-Excel {
       $global:excel.Visible = $true
       $global:XlmcpOwnsExcel = $true                            # only OUR creations are ownable
     }
-    try { $global:excel.DisplayAlerts = $false } catch {}
     return $global:excel
   }
   return $null   # attach-only: nothing open -> caller throws a clean message

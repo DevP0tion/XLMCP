@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { runPS } from "../../services/powershell.js";
-import { psEscape, textContent } from "../../services/utils.js";
+import { psEscape, textContent, withAlertsOff } from "../../services/utils.js";
 import { workbookParam, sheetParam } from "../../schemas/common.js";
 
 export function register(server: McpServer) {
@@ -26,7 +26,7 @@ export function register(server: McpServer) {
         $wb = Resolve-Workbook ${wbName}
         $ws = Resolve-Sheet $wb ${shName}
         $r = $ws.Range('${psEscape(range)}')
-        ${cmd}
+        ${withAlertsOff(cmd)}
       `);
       return textContent({ success: true });
     }

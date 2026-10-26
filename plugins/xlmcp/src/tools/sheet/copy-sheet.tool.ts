@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { runPS } from "../../services/powershell.js";
-import { psEscape, textContent } from "../../services/utils.js";
+import { psEscape, textContent, withAlertsOff } from "../../services/utils.js";
 import { workbookParam } from "../../schemas/common.js";
 
 export function register(server: McpServer) {
@@ -25,7 +25,7 @@ export function register(server: McpServer) {
       const raw = await runPS(`
         $wb = Resolve-Workbook ${wbName}
         $src = $wb.Worksheets.Item('${psEscape(source)}')
-        $src.Copy([System.Reflection.Missing]::Value, $wb.Worksheets.Item($wb.Worksheets.Count))
+        ${withAlertsOff(`$src.Copy([System.Reflection.Missing]::Value, $wb.Worksheets.Item($wb.Worksheets.Count))`)}
         ${renameCmd}
         $wb.ActiveSheet.Name
       `);

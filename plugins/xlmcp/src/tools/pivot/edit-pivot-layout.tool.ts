@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { runPS } from "../../services/powershell.js";
-import { psEscape, textContent, parseJSON } from "../../services/utils.js";
+import { psEscape, textContent, parseJSON, withAlertsOff } from "../../services/utils.js";
 import { workbookParam, sheetParam } from "../../schemas/common.js";
 
 const orientationSchema = z.enum(["row", "column", "data", "page", "hidden"]);
@@ -68,8 +68,8 @@ export function register(server: McpServer) {
         $wb = Resolve-Workbook ${wbName}
         $ws = Resolve-Sheet $wb ${shName}
         $pvt = $ws.PivotTables('${psEscape(name)}')
-        ${cmds.join("\n        ")}
-        ${refreshCmd}
+        ${withAlertsOff(`${cmds.join("\n          ")}
+          ${refreshCmd}`)}
         function Get-FieldNames($fields) {
           $names = @()
           try { for ($i = 1; $i -le $fields.Count; $i++) { $names += $fields.Item($i).Name } } catch {}

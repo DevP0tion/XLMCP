@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { runPS } from "../../services/powershell.js";
-import { psEscape, textContent, parseJSON } from "../../services/utils.js";
+import { psEscape, textContent, parseJSON, withAlertsOff } from "../../services/utils.js";
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -27,7 +27,7 @@ export function register(server: McpServer) {
           $existing.Activate()
           $wb = $existing
         } else {
-          $wb = $excel.Workbooks.Open($path, [System.Reflection.Missing]::Value, $${readOnly})
+          ${withAlertsOff(`$wb = $excel.Workbooks.Open($path, [System.Reflection.Missing]::Value, $${readOnly})`)}
         }
         @{
           Name = $wb.Name

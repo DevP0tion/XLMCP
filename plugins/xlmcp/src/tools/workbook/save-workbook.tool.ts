@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { runPS } from "../../services/powershell.js";
-import { psEscape, textContent } from "../../services/utils.js";
+import { psEscape, textContent, withAlertsOff } from "../../services/utils.js";
 import { workbookParam } from "../../schemas/common.js";
 
 export function register(server: McpServer) {
@@ -23,7 +23,7 @@ export function register(server: McpServer) {
         : `$wb.Save()`;
       await runPS(`
         $wb = Resolve-Workbook ${wbName}
-        ${saveCmd}
+        ${withAlertsOff(saveCmd)}
       `);
       return textContent({ success: true });
     }

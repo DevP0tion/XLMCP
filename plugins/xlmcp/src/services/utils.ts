@@ -42,6 +42,21 @@ export function parseJSON<T = unknown>(raw: string): T {
   }
 }
 
+/**
+ * Run a PS fragment with Excel's DisplayAlerts off (for COM calls that would otherwise raise a modal
+ * prompt), restoring the previous value: the setting belongs to the user's whole Excel instance.
+ */
+export function withAlertsOff(cmd: string): string {
+  return `
+        $__prevAlerts = $excel.DisplayAlerts
+        $excel.DisplayAlerts = $false
+        try {
+          ${cmd}
+        } finally {
+          $excel.DisplayAlerts = $__prevAlerts
+        }`;
+}
+
 /** MCP text content 래퍼 */
 export function textContent(data: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
