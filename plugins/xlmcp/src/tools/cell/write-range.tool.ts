@@ -116,12 +116,14 @@ async function writeChunked(
 
   try {
     const chunkScripts = chunks
-      .map((chunk) => `
+      .map((chunk, i) => `
         $chunkStart = $ws.Cells.Item($start.Row + ${chunk.rowOffset}, $start.Column)
         $chunkEnd = $ws.Cells.Item($start.Row + ${chunk.rowOffset} + ${chunk.chunkRows} - 1, $start.Column + ${cols} - 1)
         $targetRange = $ws.Range($chunkStart, $chunkEnd)
         ${chunk.fill.script}
+        XlmcpMark 'json parse+fill c${i}'
         $targetRange.Value2 = $arr
+        XlmcpMark 'value2 write c${i}'
         [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($targetRange)
         [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($chunkEnd)
         [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($chunkStart)
@@ -149,6 +151,7 @@ async function writeChunked(
           $excel.Calculation = -4135
           ${chunkScripts}
           ${formulaCmds}
+          XlmcpMark 'formulas'
         } finally {
           ${restore}
         }

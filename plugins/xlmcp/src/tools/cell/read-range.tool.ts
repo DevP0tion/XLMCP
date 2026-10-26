@@ -5,7 +5,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { randomUUID } from "crypto";
 import { runPS } from "../../services/powershell.js";
-import { psEscape, textContent, parseJSON } from "../../services/utils.js";
+import { psEscape, textContent, parseJSON, debugLog } from "../../services/utils.js";
 import { workbookParam, sheetParam } from "../../schemas/common.js";
 
 const DEFAULT_CHUNK_SIZE = 30;
@@ -90,11 +90,18 @@ async function readSingle(
       $ws = Resolve-Sheet $wb ${shName}
       $r = ${rangeExpr}
       $values = $r.Value2
+      XlmcpMark 'value2 read'
       ${buildReadScript(rows, cols)}
+      XlmcpMark 'ps build'
       $json = ConvertTo-Json @($data) -Depth 5 -Compress
+      XlmcpMark 'json serialize'
       [System.IO.File]::WriteAllText('${escapedPath}', $json, (New-Object System.Text.UTF8Encoding $false))
+      XlmcpMark 'file write'
     `, { retry: true });
-    return JSON.parse(readFileSync(tmpPath, "utf-8"));
+    const t0 = Date.now();
+    const data = JSON.parse(readFileSync(tmpPath, "utf-8"));
+    debugLog(`ts read_range parse ${Date.now() - t0}ms`);
+    return data;
   } finally {
     try { unlinkSync(tmpPath); } catch { /* ignore */ }
   }
@@ -132,9 +139,13 @@ async function readChunked(
         return `
         $r = $ws.Range($ws.Cells.Item(${chunkStartRow}, ${startCol}), $ws.Cells.Item(${chunkEndRow}, ${endCol}))
         $values = $r.Value2
+        XlmcpMark 'value2 read c${i}'
         ${buildReadScript(chunk.chunkRows, cols)}
+        XlmcpMark 'ps build c${i}'
         $json = ConvertTo-Json @($data) -Depth 5 -Compress
+        XlmcpMark 'json serialize c${i}'
         [System.IO.File]::WriteAllText('${escapedPath}', $json, (New-Object System.Text.UTF8Encoding $false))
+        XlmcpMark 'file write c${i}'
         [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($r)
         $r = $null`;
       })
@@ -146,11 +157,13 @@ async function readChunked(
       ${chunkScripts}
     `, { retry: true });
 
+    const t0 = Date.now();
     const allData: unknown[][] = [];
     for (const f of tmpFiles) {
       const chunkData: unknown[][] = JSON.parse(readFileSync(f, "utf-8"));
       allData.push(...chunkData);
     }
+    debugLog(`ts read_range parse ${chunks.length} chunks ${Date.now() - t0}ms`);
 
     if (allData.length !== rows) {
       throw new Error(

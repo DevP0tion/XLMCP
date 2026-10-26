@@ -1,3 +1,18 @@
+import { appendFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { env } from "./env.js";
+
+/** XLMCP_DEBUG=1: per-step timing log (%TEMP%\xlmcp.log). null when off. */
+export const DEBUG_LOG = env("DEBUG") === "1" ? join(tmpdir(), "xlmcp.log") : null;
+
+export function debugLog(msg: string): void {
+  if (!DEBUG_LOG) return;
+  try {
+    appendFileSync(DEBUG_LOG, `${new Date().toISOString()} ${msg}\n`);
+  } catch { /* logging must never break a tool */ }
+}
+
 /** PowerShell 싱글쿼트 문자열 내 특수문자 이스케이프 */
 export function psEscape(str: string): string {
   // 싱글쿼트 문자열 내에서는 '' 만 이스케이프하면 됨

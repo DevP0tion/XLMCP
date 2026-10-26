@@ -1,5 +1,6 @@
 import { PowerShell } from "node-powershell";
 import { env } from "./env.js";
+import { DEBUG_LOG, debugLog, psEscape } from "./utils.js";
 
 // ── 설정 ──
 const POOL_SIZE = Math.max(1, parseInt(env("POOL_SIZE") ?? "4", 10) || 4);
@@ -57,6 +58,16 @@ public class XlmcpRot {
   }
   $global:XlmcpRotReady = $true
 } catch { $global:XlmcpRotReady = $false }
+
+function XlmcpMark([string]$Label) {
+  # XLMCP_DEBUG timing: ms since the previous mark (or script start). No-op when logging is off.
+  if (-not $global:XlmcpLog) { return }
+  try {
+    $line = "{0} s{1} ps {2} {3}ms" -f (Get-Date).ToUniversalTime().ToString('o'), $global:XlmcpSessionId, $Label, $global:XlmcpSw.ElapsedMilliseconds
+    [System.IO.File]::AppendAllText($global:XlmcpLog, $line + [Environment]::NewLine)
+  } catch {}
+  $global:XlmcpSw.Restart()
+}
 
 function Get-XlmcpWbCount {
   param($app)
@@ -184,16 +195,19 @@ class Session {
   }
 
   async init(): Promise<void> {
-    await this.ps.invoke(INIT_SCRIPT);
+    const log = DEBUG_LOG ? `'${psEscape(DEBUG_LOG)}'` : "$null";
+    await this.ps.invoke(`$global:XlmcpSessionId = ${this.id}; $global:XlmcpLog = ${log}\n${INIT_SCRIPT}`);
   }
 
   async invoke(script: string, timeoutMs: number): Promise<string> {
     this.busy = true;
     const wrapped = `
       try {
+        if ($global:XlmcpLog) { $global:XlmcpSw = [System.Diagnostics.Stopwatch]::StartNew() }
         # Re-bind to the workbook-bearing instance every call so all sessions converge on the user's instance.
         # attach-only: if nothing is open, \$global:excel stays \$null and each tool handles it.
         Ensure-Excel | Out-Null
+        XlmcpMark 'bind'
         ${script}
       } catch {
         try { [Console]::Error.WriteLine(($_ | ConvertTo-Json -Compress)) } catch { [Console]::Error.WriteLine($_.Exception.Message) }
@@ -203,7 +217,8 @@ class Session {
         foreach ($__v in @('r','c','src','srcWs','dstWs','dst','dest','targetRange','start','chunkStart','chunkEnd','pos','t','pvt','pf','cache','chart','chartObj','fc','first','current','n','existing','pic','s','comp','cm')) {
           try {
             $__obj = Get-Variable -Name $__v -ValueOnly -ErrorAction SilentlyContinue
-            if ($__obj -ne $null) {
+            # $null on the left: "$range -ne $null" enumerates every cell of a COM Range (~1.3 ms/cell)
+            if ($null -ne $__obj) {
               [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($__obj)
               Set-Variable -Name $__v -Value $null -ErrorAction SilentlyContinue
             }
@@ -317,6 +332,7 @@ class SessionPool {
   private exclusiveQueue: Array<{
     script: string;
     opts: RunPSOptions;
+    queuedAt: number;
     resolve: (v: string) => void;
     reject: (e: Error) => void;
   }> = [];
@@ -362,6 +378,7 @@ class SessionPool {
 
   // ── 일반 실행 ──
   async executeGeneral(script: string, opts: RunPSOptions): Promise<string> {
+    const queuedAt = Date.now();
     await this.init();
     if (this.exclusiveRunning) {
       await this.waitForExclusiveEnd();
@@ -370,7 +387,7 @@ class SessionPool {
     // 유휴 세션 탐색
     const idle = this.findIdle();
     if (idle) {
-      return this.invokeOnSession(idle, script, false, opts);
+      return this.invokeOnSession(idle, script, false, opts, queuedAt);
     }
 
     // 상한 미도달 → 새 세션 생성 (pendingCreations로 동시 생성 경합 방지)
@@ -379,7 +396,7 @@ class SessionPool {
       try {
         const newSession = await Session.create(this.nextGeneralId++);
         this.generalPool.push(newSession);
-        return this.invokeOnSession(newSession, script, false, opts);
+        return this.invokeOnSession(newSession, script, false, opts, queuedAt);
       } catch (err) {
         this.nextGeneralId--;
         throw err;
@@ -391,22 +408,23 @@ class SessionPool {
     // 상한 도달 → 큐에 대기
     this.totalQueued++;
     return new Promise<string>((resolve, reject) => {
-      this.generalQueue.push({ id: this.nextTaskId++, script, opts, resolve, reject, enqueuedAt: Date.now() });
+      this.generalQueue.push({ id: this.nextTaskId++, script, opts, resolve, reject, enqueuedAt: queuedAt });
     });
   }
 
   // ── exclusive 실행 ──
   async executeExclusive(script: string, opts: RunPSOptions): Promise<string> {
+    const queuedAt = Date.now();
     await this.init();
     if (this.exclusiveRunning) {
       return new Promise<string>((resolve, reject) => {
-        this.exclusiveQueue.push({ script, opts, resolve, reject });
+        this.exclusiveQueue.push({ script, opts, queuedAt, resolve, reject });
       });
     }
-    return this.runExclusive(script, opts);
+    return this.runExclusive(script, opts, queuedAt);
   }
 
-  private async runExclusive(script: string, opts: RunPSOptions): Promise<string> {
+  private async runExclusive(script: string, opts: RunPSOptions, queuedAt: number): Promise<string> {
     this.exclusiveRunning = true;
     if (this.generalActiveCount > 0) {
       await new Promise<void>((resolve) => {
@@ -414,7 +432,7 @@ class SessionPool {
       });
     }
     try {
-      return await this.invokeOnSession(this.exclusiveSession!, script, true, opts);
+      return await this.invokeOnSession(this.exclusiveSession!, script, true, opts, queuedAt);
     } finally {
       const next = this.exclusiveQueue.shift();
 
@@ -424,11 +442,11 @@ class SessionPool {
         this.signalExclusiveEnd();
         this.flushGeneralQueue();
         this.waitForGeneralQuiet().then(() => {
-          this.runExclusive(next.script, next.opts).then(next.resolve, next.reject);
+          this.runExclusive(next.script, next.opts, next.queuedAt).then(next.resolve, next.reject);
         });
       } else if (next) {
         // general 큐 없음: 바로 다음 exclusive 실행
-        this.runExclusive(next.script, next.opts).then(next.resolve, next.reject);
+        this.runExclusive(next.script, next.opts, next.queuedAt).then(next.resolve, next.reject);
       } else {
         this.exclusiveRunning = false;
         this.signalExclusiveEnd();
@@ -442,15 +460,21 @@ class SessionPool {
     session: Session,
     script: string,
     isExclusive: boolean,
-    opts: RunPSOptions
+    opts: RunPSOptions,
+    queuedAt: number
   ): Promise<string> {
     const timeoutMs = opts.timeoutMs ?? INVOKE_TIMEOUT;
     if (!isExclusive) this.generalActiveCount++;
+    const startedAt = Date.now();
+    const logTiming = (outcome: string) =>
+      debugLog(`s${session.id} runPS wait=${startedAt - queuedAt}ms invoke=${Date.now() - startedAt}ms ${outcome}`);
     try {
       const result = await session.invoke(script, timeoutMs);
       this.totalProcessed++;
+      logTiming("ok");
       return result;
     } catch (err: unknown) {
+      logTiming("err");
       const timedOut = Session.isTimeout(err);
       if (timedOut || session.isProcessDead(err)) {
         // 타임아웃: 스크립트가 아직 실행 중일 수 있으므로 세션을 강제 종료 후 재생성
@@ -495,7 +519,7 @@ class SessionPool {
     if (freedSession.busy || !freedSession.alive) return;
 
     const task = this.generalQueue.shift()!;
-    this.invokeOnSession(freedSession, task.script, false, task.opts)
+    this.invokeOnSession(freedSession, task.script, false, task.opts, task.enqueuedAt)
       .then(task.resolve, task.reject);
   }
 
@@ -506,7 +530,7 @@ class SessionPool {
       if (this.generalQueue.length === 0) break;
       if (!session.busy && session.alive) {
         const task = this.generalQueue.shift()!;
-        this.invokeOnSession(session, task.script, false, task.opts)
+        this.invokeOnSession(session, task.script, false, task.opts, task.enqueuedAt)
           .then(task.resolve, task.reject);
       }
     }
