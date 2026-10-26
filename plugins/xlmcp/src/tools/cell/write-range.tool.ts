@@ -16,25 +16,44 @@ interface FormulaEntry {
   formula: string;
 }
 
+type CellInput = string | number | boolean | null;
+
+const STRICT_NUMBER = /^-?(0|[1-9]\d*)(\.\d+)?$/;
+// Excel parses strings written through Value2 like typed input ("0852"->852, "1/2"->date, "TRUE"->bool,
+// "#N/A"->error, "'q"->"q"); such strings get a ' prefix so they are stored verbatim as text.
+const EXCEL_WOULD_PARSE = /\d|^(true|false)$|^[#'=]/i;
+
+/** Value written through Value2 for one non-formula input cell. */
+function toCell(v: CellInput): string | number | boolean | null {
+  if (v === null || v === "") return null; // empty cell, never a zero-length string (Text-formatted columns keep "")
+  if (typeof v !== "string") return v;
+  // > 15 significant digits would be rounded by Excel, so such digit strings stay text
+  if (STRICT_NUMBER.test(v) && v.replace(/[-.]/g, "").replace(/^0+/, "").length <= 15) return Number(v);
+  return EXCEL_WOULD_PARSE.test(v) ? `'${v}` : v;
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "excel_write_range",
     {
       title: "Write Range",
       description:
-        "Write 2D array from start cell. Auto chunked parallel write for large data.",
+        "Write 2D array from start cell. Cells: string | number | boolean | null. null and \"\" leave the cell empty. " +
+        "Strings are stored verbatim as text unless they are plain decimals (\"12\", \"-3.5\"); \"=...\" is a formula " +
+        "unless formulas=false. Large data is written in sequential chunks.",
       inputSchema: {
         workbook: workbookParam,
         sheet: sheetParam,
         startCell: z.string().describe("Start cell address (e.g. A1)"),
         data: z
-          .array(z.array(z.string()))
+          .array(z.array(z.union([z.string(), z.number(), z.boolean(), z.null()])))
           .describe("2D array data. Each inner array is one row"),
-        chunkSize: z.number().int().optional().describe("Chunk size in rows for parallel write. Default 500"),
+        formulas: z.boolean().default(true).describe("Treat strings starting with = as formulas. false writes them as text"),
+        chunkSize: z.number().int().optional().describe("Chunk size in rows. Default 500"),
       },
       annotations: { readOnlyHint: false, destructiveHint: false },
     },
-    async ({ workbook, sheet, startCell, data, chunkSize: cs }) => {
+    async ({ workbook, sheet, startCell, data, formulas, chunkSize: cs }) => {
       const chunkSize = cs ?? DEFAULT_CHUNK_SIZE;
       const rows = data.length;
       const cols = data[0]?.length ?? 0;
@@ -46,7 +65,7 @@ export function register(server: McpServer) {
       const shName = sheet ? `'${psEscape(sheet)}'` : '""';
 
       // 모든 크기: 청크 분할 + JSON 임시 파일 (인라인 경로는 1행 데이터를 잘못 펼쳐 제거)
-      return writeChunked(wbName, shName, startCell, data, rows, cols, chunkSize);
+      return writeChunked(wbName, shName, startCell, data, rows, cols, chunkSize, formulas);
     }
   );
 }
@@ -55,18 +74,21 @@ export function register(server: McpServer) {
  * Write one block of cells to a JSON temp file and return the PS fragment that loads it into $arr
  * (object[rows,cols]). Formulas are returned separately and left $null in $arr.
  */
-export function buildFill(data: string[][], rowOffset = 0): { script: string; formulas: FormulaEntry[]; tmpFile: string } {
+export function buildFill(
+  data: CellInput[][],
+  rowOffset = 0,
+  formulasOn = true
+): { script: string; formulas: FormulaEntry[]; tmpFile: string } {
   const rows = data.length;
   const cols = data[0]?.length ?? 0;
   const formulas: FormulaEntry[] = [];
   const values = data.map((row, ri) =>
     row.map((v, ci) => {
-      if (v.startsWith("=")) {
+      if (formulasOn && typeof v === "string" && v.startsWith("=")) {
         formulas.push({ rowOffset: rowOffset + ri, colOffset: ci, formula: v });
         return null;
       }
-      const num = Number(v);
-      return v !== "" && !isNaN(num) ? num : v;
+      return toCell(v);
     })
   );
   const tmpFile = join(tmpdir(), `xlmcp_chunk_${randomUUID()}.json`);
@@ -114,16 +136,17 @@ async function writeChunked(
   wbName: string,
   shName: string,
   startCell: string,
-  data: string[][],
+  data: CellInput[][],
   rows: number,
   cols: number,
-  chunkSize: number
+  chunkSize: number,
+  formulasOn: boolean
 ) {
   // 청크 분할 (각 청크는 자체 JSON 임시 파일)
   const chunks: { rowOffset: number; chunkRows: number; fill: ReturnType<typeof buildFill> }[] = [];
   for (let offset = 0; offset < rows; offset += chunkSize) {
     const chunkData = data.slice(offset, offset + chunkSize);
-    chunks.push({ rowOffset: offset, chunkRows: chunkData.length, fill: buildFill(chunkData, offset) });
+    chunks.push({ rowOffset: offset, chunkRows: chunkData.length, fill: buildFill(chunkData, offset, formulasOn) });
   }
   const formulas = chunks.flatMap((c) => c.fill.formulas);
   // 수식은 연속 블록 단위 JSON → Range.Formula 대입 (상수는 .Formula로 보내지 않음: 입력처럼 해석됨)

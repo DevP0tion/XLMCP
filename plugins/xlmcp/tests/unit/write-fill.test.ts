@@ -4,8 +4,8 @@ import { buildFill, formulaRuns } from "../../src/tools/cell/write-range.tool.js
 import { runPowerShell } from "../helpers/ps.js";
 
 /** Run write_range's fill fragment in PS 5.1 and return $arr as { value, type } cells. */
-export function runFill(data: Parameters<typeof buildFill>[0]) {
-  const fill = buildFill(data);
+export function runFill(data: Parameters<typeof buildFill>[0], formulas = true) {
+  const fill = buildFill(data, 0, formulas);
   try {
     const out = runPowerShell(`${fill.script}
 "DIMS\`t$($arr.GetLength(0))\`t$($arr.GetLength(1))"
@@ -42,6 +42,31 @@ test("Nx1 column keeps every cell", () => {
 
 test("NxM block keeps every cell", () => {
   expect(runFill([["A", "B"], ["C", "D"]]).values).toEqual([["A", "B"], ["C", "D"]]);
+});
+
+// P2-2: strict number rule; strings Excel would parse like typed input are protected with a ' prefix.
+test("only plain decimal strings become numbers", () => {
+  expect(runFill([["12", "-3.5", "0", "0852", " ", "0x1F", "1e3"]]).values).toEqual([
+    [12, -3.5, 0, "'0852", " ", "'0x1F", "'1e3"],
+  ]);
+});
+
+test("strings Excel would parse are stored as literal text", () => {
+  expect(runFill([["1/2", "TRUE", "50%", "#N/A", "'q", "abc", "a\nb", "12345678901234567"]]).values).toEqual([
+    ["'1/2", "'TRUE", "'50%", "'#N/A", "''q", "abc", "a\nb", "'12345678901234567"],
+  ]);
+});
+
+test("typed cells keep their type; null and empty string become empty cells", () => {
+  const r = runFill([[7, 1.5, true, false, null, ""]] as never);
+  expect(r.values).toEqual([[7, 1.5, true, false, null, null]]);
+  expect(r.types[0].slice(2, 4)).toEqual(["Boolean", "Boolean"]);
+});
+
+test("formulas: false writes '=' text literally", () => {
+  const r = runFill([["=1+1"]], false);
+  expect(r.values).toEqual([["'=1+1"]]);
+  expect(r.formulas).toEqual([]);
 });
 
 // P1-4: formulas are assigned per vertical run, not per cell.
