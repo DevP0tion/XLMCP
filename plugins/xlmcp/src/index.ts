@@ -17,7 +17,7 @@ import { registerVbaTools } from "./tools/vba/index.js";
 
 const server = new McpServer({
   name: "xlmcp",
-  version: "0.3.0",
+  version: "0.5.0",
 });
 
 // 도구 등록

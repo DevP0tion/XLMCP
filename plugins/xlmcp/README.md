@@ -12,8 +12,9 @@ Excel을 직접 제어하는 MCP 서버.
 
 - **Session Pool**: PowerShell 프로세스 4개 (General) + 1개 (Exclusive). 라운드 로빈 배분.
 - **Exclusive Queue**: 클립보드·Selection·구조 변경 도구는 직렬 실행. 실행 중 General Pool 일시 차단.
-- **HealthMonitor**: 10초 heartbeat, 사망 감지 시 자동 재생성, 호출당 타임아웃(기본 30초, `XLMCP_TIMEOUT_MS`).
-- **대용량 쓰기**: 30행 이상 시 자동 청크 분할 + JSON 임시 파일 + 병렬 쓰기.
+- **HealthMonitor**: 10초 heartbeat, 사망 감지 시 자동 재생성, 호출당 타임아웃(기본 30초, `XLMCP_TIMEOUT_MS`). 타임아웃 시 세션을 교체하고 스크립트를 다시 실행하지 않음(읽기 전용 도구만 1회 재시도). 에러 `type: "Timeout"`은 일부 반영됐을 수 있다는 뜻.
+- **범위 읽기·쓰기**: 500행 단위 청크 + JSON 임시 파일. 청크는 한 PowerShell 세션에서 순차 실행(호출 1회 = 타임아웃 예산 1회).
+- **사용자 Excel 설정 보존**: `DisplayAlerts`·`Calculation`·`ScreenUpdating`은 바꾼 뒤 원래 값으로 복원.
 - **가상 클립보드**: 값/수식 복사 시 시스템 클립보드 미사용. 서식 복사만 시스템 클립보드 사용.
 
 ## 환경 변수
@@ -22,6 +23,16 @@ Excel을 직접 제어하는 MCP 서버.
 |---|---|---|
 | `XLMCP_POOL_SIZE` | `4` | PowerShell 세션 풀 크기 (General Pool). 최소 1 |
 | `XLMCP_TIMEOUT_MS` | `30000` | PowerShell 호출 1회당 타임아웃(ms). 대용량 읽기·쓰기 시 상향. 플러그인은 `timeout_ms` 설정 |
+| `XLMCP_DEBUG` | — | `1`이면 단계별 소요 시간(ms)을 `%TEMP%\xlmcp.log`에 기록 |
+
+## 테스트
+
+| 명령 | 내용 |
+|---|---|
+| `bun run test` | PS-only 단위 테스트. Excel 불필요 |
+| `bun run test:excel` | Excel 통합 테스트. 직접 만든 임시 통합문서만 사용. Excel이 이미 실행 중이면 거부 |
+| `bun run smoke` | 실제 세션 풀 smoke test |
+| `bun scripts/bench-range.ts [rows] [cols] [chunkSize]` | 범위 쓰기·읽기 단계별 시간 측정 |
 
 ## 도구 (48개)
 
@@ -53,7 +64,7 @@ Excel을 직접 제어하는 MCP 서버.
 | `excel_read_cell` | 단일 셀의 값, 수식, 표시 텍스트, 표시 형식 반환 |
 | `excel_write_cell` | 단일 셀에 값 또는 수식 입력. `=`로 시작하면 수식 처리 |
 | `excel_read_range` | 범위를 2D 배열로 반환. 타입 유지. 생략 시 UsedRange |
-| `excel_write_range` | 시작 셀부터 2D 배열 데이터 입력. 숫자 자동 감지, 수식 혼합 가능. 대용량 시 자동 청크 분할 병렬 쓰기 |
+| `excel_write_range` | 시작 셀부터 2D 배열 입력(문자열·숫자·불린·null). 문자열은 일반 십진수만 숫자로, 나머지는 텍스트 그대로 저장. 수식 혼합 가능(`formulas: false`면 텍스트). `verify`로 다시 읽어 검증 |
 | `excel_read_range_formulas` | 범위의 수식을 2D 배열로 반환 |
 | `excel_clear_range` | 범위 삭제 (값만/서식만/전체) |
 
@@ -75,7 +86,7 @@ Excel을 직접 제어하는 MCP 서버.
 | `excel_insert_delete_rows_cols` | 행 또는 열 삽입·삭제 |
 | `excel_copy_paste_range` | 값 또는 수식 복사/붙여넣기. 시스템 클립보드 미사용, 병렬 안전 |
 | `excel_copy_paste_format` | 서식 복사/붙여넣기. 값·수식과 함께 필요 시 `copy_paste_range`와 순차 호출 |
-| `excel_find_replace` | 시트 내 찾기/바꾸기. 찾기만도 가능 |
+| `excel_find_replace` | 찾기/바꾸기. 찾기는 원시 값(서식 미적용) 기준 매칭 후 `Count`와 연속 `Ranges` 반환. 바꾸기는 실제 바뀐 셀 수 반환, 보호 시트는 오류. `lookAt` 기본 `whole` |
 | `excel_sort_range` | 범위를 지정 열 기준으로 정렬 |
 | `excel_auto_filter` | 자동 필터 설정/해제/조건 적용 |
 

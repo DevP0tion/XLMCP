@@ -16,7 +16,7 @@ export function register(server: McpServer) {
     {
       title: "Read Range Formulas",
       description:
-        "Read formulas as 2D array. Returns values for non-formula cells. Auto chunked parallel.",
+        "Read formulas as 2D array. Returns values for non-formula cells. Large ranges are read in sequential chunks.",
       inputSchema: {
         workbook: workbookParam,
         sheet: sheetParam,

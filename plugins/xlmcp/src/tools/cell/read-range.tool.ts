@@ -16,12 +16,12 @@ export function register(server: McpServer) {
     {
       title: "Read Range",
       description:
-        "Read cell values as 2D array. Reads UsedRange if omitted. Auto chunked parallel for large data.",
+        "Read raw cell values (Value2) as 2D array. Reads UsedRange if omitted. Large ranges are read in sequential chunks.",
       inputSchema: {
         workbook: workbookParam,
         sheet: sheetParam,
         range: z.string().optional().describe("Range address (e.g. A1:C10). UsedRange if omitted"),
-        chunkSize: z.number().int().optional().describe("Chunk size in rows for parallel read. Default 500"),
+        chunkSize: z.number().int().optional().describe("Chunk size in rows. Default 500"),
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },

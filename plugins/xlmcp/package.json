@@ -1,7 +1,7 @@
 {
   "name": "xlmcp",
-  "version": "0.4.0",
-  "description": "Excel automation MCP server via PowerShell COM. 48 tools — session pooling, chunked parallel I/O, virtual clipboard. Windows only.",
+  "version": "0.5.0",
+  "description": "Excel automation MCP server via PowerShell COM. 50 tools — session pooling, chunked range I/O, virtual clipboard. Windows only.",
   "license": "MIT",
   "author": "DevP0tion",
   "repository": {
@@ -19,7 +19,9 @@
     "claude",
     "model-context-protocol"
   ],
-  "os": ["win32"],
+  "os": [
+    "win32"
+  ],
   "type": "module",
   "bin": {
     "xlmcp": "dist/index.js"
@@ -28,6 +30,9 @@
     "build": "bun build src/index.ts --outdir dist --target node",
     "dev": "bun run src/index.ts",
     "typecheck": "tsc --noEmit",
+    "test": "bun test tests/unit",
+    "test:excel": "XLMCP_IT=1 bun test --timeout 120000 tests/integration",
+    "smoke": "bun scripts/smoke-test.ts",
     "prepublishOnly": "bun run build"
   },
   "files": [
