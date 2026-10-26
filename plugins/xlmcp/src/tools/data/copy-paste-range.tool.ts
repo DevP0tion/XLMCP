@@ -7,6 +7,7 @@ import { randomUUID } from "crypto";
 import { runPS } from "../../services/powershell.js";
 import { psEscape, textContent, parseJSON } from "../../services/utils.js";
 import { workbookParam, sheetParam } from "../../schemas/common.js";
+import { captureAppState } from "../cell/write-range.tool.js";
 
 const DEFAULT_CHUNK_SIZE = 30;
 
@@ -117,7 +118,8 @@ async function writeChunked(
   prop: string,
   chunkSize: number
 ): Promise<void> {
-  // Calculation/ScreenUpdating 억제
+  // Calculation/ScreenUpdating 억제 (사용자 값은 먼저 캡처해 finally에서 그대로 복원)
+  const restore = await captureAppState(wbName);
   await runPS(`
     $wb = Resolve-Workbook ${wbName}
     $excel.ScreenUpdating = $false
@@ -171,8 +173,7 @@ async function writeChunked(
     // Calculation/ScreenUpdating 복원
     await runPS(`
       $wb = Resolve-Workbook ${wbName}
-      $excel.Calculation = -4105
-      $excel.ScreenUpdating = $true
+      ${restore}
     `).catch(() => { /* 복원 실패 무시 */ });
   }
 }

@@ -5,7 +5,7 @@ import { writeFileSync, unlinkSync } from "fs";
 import { join } from "path";
 import { randomUUID } from "crypto";
 import { runPS } from "../../services/powershell.js";
-import { psEscape, textContent } from "../../services/utils.js";
+import { psEscape, textContent, parseJSON } from "../../services/utils.js";
 import { workbookParam, sheetParam } from "../../schemas/common.js";
 
 const DEFAULT_CHUNK_SIZE = 30;
@@ -84,6 +84,18 @@ export function buildFill(data: string[][], rowOffset = 0): { script: string; fo
   return { script, formulas, tmpFile };
 }
 
+/**
+ * Read the user's Calculation / ScreenUpdating (instance-wide settings) before a bulk write and return
+ * the PS statement that restores them. Captured in TS so a fallback can restore after a dead session.
+ */
+export async function captureAppState(wbName: string): Promise<string> {
+  const prev = parseJSON<{ Calc: number; SU: boolean }>(await runPS(`
+    $wb = Resolve-Workbook ${wbName}
+    @{ Calc = [int]$excel.Calculation; SU = [bool]$excel.ScreenUpdating } | ConvertTo-Json -Compress
+  `));
+  return `$excel.Calculation = ${Number(prev.Calc)}; $excel.ScreenUpdating = $${prev.SU ? "true" : "false"}`;
+}
+
 // ── 청크 분할 + 임시 파일 + 순차 ──
 async function writeChunked(
   wbName: string,
@@ -126,20 +138,26 @@ async function writeChunked(
             .join("\n        ")
         : "";
 
-    await runPS(`
-      $wb = Resolve-Workbook ${wbName}
-      $ws = Resolve-Sheet $wb ${shName}
-      $start = $ws.Range('${psEscape(startCell)}')
-      try {
-        $excel.ScreenUpdating = $false
-        $excel.Calculation = -4135
-        ${chunkScripts}
-        ${formulaCmds}
-      } finally {
-        $excel.Calculation = -4105
-        $excel.ScreenUpdating = $true
-      }
-    `);
+    const restore = await captureAppState(wbName);
+    try {
+      await runPS(`
+        $wb = Resolve-Workbook ${wbName}
+        $ws = Resolve-Sheet $wb ${shName}
+        $start = $ws.Range('${psEscape(startCell)}')
+        try {
+          $excel.ScreenUpdating = $false
+          $excel.Calculation = -4135
+          ${chunkScripts}
+          ${formulaCmds}
+        } finally {
+          ${restore}
+        }
+      `);
+    } catch (err) {
+      // PS finally never ran if the session died or timed out mid-script
+      await runPS(`if ($excel) { ${restore} }`).catch(() => { /* best-effort */ });
+      throw err;
+    }
   } finally {
     for (const c of chunks) {
       try {
@@ -148,8 +166,6 @@ async function writeChunked(
         // ignore
       }
     }
-    await runPS(`if ($excel) { $excel.Calculation = -4105; $excel.ScreenUpdating = $true }`)
-      .catch(() => { /* best-effort restoration if PS process died mid-script */ });
   }
 
   return textContent({
