@@ -25,52 +25,68 @@ export function register(server: McpServer) {
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
-    async ({ workbook, sheet, range, chunkSize: cs }) => {
-      const chunkSize = cs ?? DEFAULT_CHUNK_SIZE;
+    async ({ workbook, sheet, range, chunkSize }) => {
       const wbName = workbook ? `'${psEscape(workbook)}'` : '""';
       const shName = sheet ? `'${psEscape(sheet)}'` : '""';
       const rangeExpr = range
         ? `$ws.Range('${psEscape(range)}')`
         : `$ws.UsedRange`;
-
-      // 1. 범위 메타 조회
-      const metaRaw = await runPS(`
-        $wb = Resolve-Workbook ${wbName}
-        $ws = Resolve-Sheet $wb ${shName}
-        $r = ${rangeExpr}
-        @{
-          Rows = $r.Rows.Count
-          Cols = $r.Columns.Count
-          StartRow = $r.Row
-          StartCol = $r.Column
-          Address = $r.Address()
-        } | ConvertTo-Json -Compress
-      `, { retry: true });
-      const meta = parseJSON<{
-        Rows: number;
-        Cols: number;
-        StartRow: number;
-        StartCol: number;
-        Address: string;
-      }>(metaRaw);
-
-      const { Rows: rows, Cols: cols, StartRow: startRow, StartCol: startCol, Address: addr } = meta;
-
-      if (rows === 0 || cols === 0) {
-        return textContent({ Range: addr, Rows: 0, Cols: 0, Data: [] });
-      }
-
-      // 2. 소규모: 단일 읽기 + 임시 파일 출력
-      if (rows < chunkSize) {
-        const data = await readSingle(wbName, shName, rangeExpr, rows, cols);
-        return textContent({ Range: addr, Rows: rows, Cols: cols, Data: data });
-      }
-
-      // 3. 대규모: 청크 분할 병렬 읽기
-      const data = await readChunked(wbName, shName, rows, cols, startRow, startCol, chunkSize);
-      return textContent({ Range: addr, Rows: rows, Cols: cols, Data: data });
+      const r = await readRange(wbName, shName, rangeExpr, chunkSize);
+      return textContent({ Range: r.Range, Rows: r.Rows, Cols: r.Cols, Data: r.Data });
     }
   );
+}
+
+export interface RangeData {
+  Range: string;
+  Rows: number;
+  Cols: number;
+  StartRow: number;
+  StartCol: number;
+  Data: unknown[][];
+}
+
+/** Read a range's Value2 (or Formula) as a 2D array: one meta query, then single or chunked temp-file reads. */
+export async function readRange(
+  wbName: string,
+  shName: string,
+  rangeExpr: string,
+  chunkSize = DEFAULT_CHUNK_SIZE,
+  prop: "Value2" | "Formula" = "Value2"
+): Promise<RangeData> {
+  // 1. 범위 메타 조회
+  const metaRaw = await runPS(`
+    $wb = Resolve-Workbook ${wbName}
+    $ws = Resolve-Sheet $wb ${shName}
+    $r = ${rangeExpr}
+    @{
+      Rows = $r.Rows.Count
+      Cols = $r.Columns.Count
+      StartRow = $r.Row
+      StartCol = $r.Column
+      Address = $r.Address()
+    } | ConvertTo-Json -Compress
+  `, { retry: true });
+  const meta = parseJSON<{
+    Rows: number;
+    Cols: number;
+    StartRow: number;
+    StartCol: number;
+    Address: string;
+  }>(metaRaw);
+
+  const { Rows: rows, Cols: cols, StartRow: startRow, StartCol: startCol, Address: addr } = meta;
+  const result = { Range: addr, Rows: rows, Cols: cols, StartRow: startRow, StartCol: startCol };
+
+  if (rows === 0 || cols === 0) {
+    return { ...result, Rows: 0, Cols: 0, Data: [] };
+  }
+
+  // 2. 소규모: 단일 읽기 / 3. 대규모: 청크 분할 순차 읽기
+  const data = rows < chunkSize
+    ? await readSingle(wbName, shName, rangeExpr, rows, cols, prop)
+    : await readChunked(wbName, shName, rows, cols, startRow, startCol, chunkSize, prop);
+  return { ...result, Data: data };
 }
 
 // ── 소규모: 단일 읽기 + 임시 파일 ──
@@ -79,7 +95,8 @@ async function readSingle(
   shName: string,
   rangeExpr: string,
   rows: number,
-  cols: number
+  cols: number,
+  prop: string
 ): Promise<unknown[][]> {
   const tmpPath = join(tmpdir(), `xlmcp_read_${randomUUID()}.json`);
   const escapedPath = tmpPath.replace(/\\/g, "\\\\");
@@ -89,7 +106,7 @@ async function readSingle(
       $wb = Resolve-Workbook ${wbName}
       $ws = Resolve-Sheet $wb ${shName}
       $r = ${rangeExpr}
-      $values = $r.Value2
+      $values = $r.${prop}
       XlmcpMark 'value2 read'
       ${buildReadScript(rows, cols)}
       XlmcpMark 'ps build'
@@ -115,7 +132,8 @@ async function readChunked(
   cols: number,
   startRow: number,
   startCol: number,
-  chunkSize: number
+  chunkSize: number,
+  prop: string
 ): Promise<unknown[][]> {
   // 청크 정보 생성
   const chunks: { offset: number; chunkRows: number }[] = [];
@@ -138,7 +156,7 @@ async function readChunked(
         const endCol = startCol + cols - 1;
         return `
         $r = $ws.Range($ws.Cells.Item(${chunkStartRow}, ${startCol}), $ws.Cells.Item(${chunkEndRow}, ${endCol}))
-        $values = $r.Value2
+        $values = $r.${prop}
         XlmcpMark 'value2 read c${i}'
         ${buildReadScript(chunk.chunkRows, cols)}
         XlmcpMark 'ps build c${i}'

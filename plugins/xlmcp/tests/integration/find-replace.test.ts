@@ -50,6 +50,33 @@ describeExcel("excel_find_replace (Excel)", () => {
     expect((await xl(s, `$wb.Worksheets.Item('Prot').Range('A1').Value2`)).trim()).toBe("apple");
   });
 
+  // P1-2: find-only used FindNext + Address() x3 + Value2 per match (and $results +=).
+  test("find-only over 600x29 with thousands of part matches is fast and exact", async () => {
+    const data = Array.from({ length: 600 }, (_, r) => Array.from({ length: 29 }, (_, c) => String(r * 29 + c)));
+    await xl(s, `$n = $wb.Worksheets.Add(); $n.Name = 'Big'`);
+    await callTool("excel_write_range", { workbook: s.name, sheet: "Big", startCell: "A1", data });
+    const expected = data.flat().filter((v) => v.includes("1")).length;
+    const t = Date.now();
+    const res = await callTool("excel_find_replace", { workbook: s.name, sheet: "Big", find: "1", lookAt: "part" });
+    expect(res.Count).toBe(expected);
+    expect(Date.now() - t).toBeLessThan(5000);
+  }, 120_000);
+
+  test("lookIn values matches the raw value, not the displayed text", async () => {
+    await xl(s, `$c = $wb.Worksheets.Item('Sheet1').Range('H1'); $c.Value2 = 1000; $c.NumberFormat = '#,##0'`);
+    const args = { workbook: s.name, sheet: "Sheet1", range: "H1:H2" };
+    expect((await callTool("excel_find_replace", { ...args, find: "1000" })).Count).toBe(1);
+    expect((await callTool("excel_find_replace", { ...args, find: "1,000" })).Count).toBe(0);
+  });
+
+  test("find-only returns ranges, and cells only when asked", async () => {
+    const args = { workbook: s.name, sheet: "Sheet1", range: "A1:A3", find: "apple" };
+    const plain = await callTool("excel_find_replace", args);
+    expect(plain).toEqual({ Count: 1, Ranges: ["A1"] });
+    const withCells = await callTool("excel_find_replace", { ...args, includeCells: true });
+    expect(withCells.Cells).toEqual([{ Cell: "A1", Value: "apple" }]);
+  });
+
   test("replace reports the number of cells actually changed", async () => {
     await callTool("excel_write_range", { workbook: s.name, sheet: "Sheet1", startCell: "F1", data: [["a-1"], ["b"], ["a-2"]] });
     const res = await callTool("excel_find_replace", {

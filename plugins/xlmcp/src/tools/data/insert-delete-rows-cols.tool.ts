@@ -59,7 +59,7 @@ function colLetterToNum(letter: string): number {
 }
 
 // 1→"A", 26→"Z", 27→"AA", 52→"AZ"
-function colNumToLetter(num: number): string {
+export function colNumToLetter(num: number): string {
   let result = "";
   while (num > 0) {
     const mod = (num - 1) % 26;
