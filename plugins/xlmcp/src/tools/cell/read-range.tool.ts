@@ -52,7 +52,7 @@ export async function readRange(
   shName: string,
   rangeExpr: string,
   chunkSize = DEFAULT_CHUNK_SIZE,
-  prop: "Value2" | "Formula" = "Value2"
+  prop: "Value2" | "Formula" | "Formula2" = "Value2"
 ): Promise<RangeData> {
   // 1. 범위 메타 조회
   const metaRaw = await runPS(`

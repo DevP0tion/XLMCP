@@ -49,7 +49,7 @@ Excel을 직접 제어하는 MCP 서버.
 }
 ```
 
-## 도구 (48개)
+## 도구 (50개)
 
 ### Workbook (6)
 
@@ -72,7 +72,7 @@ Excel을 직접 제어하는 MCP 서버.
 | `excel_copy_sheet` | 시트 복사. `newName`으로 복사본 이름 지정 가능 |
 | `excel_rename_sheet` | 시트 이름 변경 |
 
-### Cell / Range (6)
+### Cell / Range (8)
 
 | 도구 | 설명 |
 |---|---|
@@ -82,6 +82,8 @@ Excel을 직접 제어하는 MCP 서버.
 | `excel_write_range` | 시작 셀부터 2D 배열 입력(문자열·숫자·불린·null). 문자열은 일반 십진수만 숫자로, 나머지는 텍스트 그대로 저장. 수식 혼합 가능(`formulas: false`면 텍스트). `verify`로 다시 읽어 검증 |
 | `excel_read_range_formulas` | 범위의 수식을 2D 배열로 반환 |
 | `excel_clear_range` | 범위 삭제 (값만/서식만/전체) |
+| `excel_export_csv` | 범위를 UTF-8 CSV 파일로 저장. 수식 셀은 수식(`=...`), 나머지는 원시값. 범위 생략 시 A1부터 마지막 사용 셀까지(CSV n번째 줄 = 시트 n행). 숫자·불린·수식으로 읽힐 텍스트에는 `'` 접두. 동적 배열이 채운 셀은 빈 칸, 레거시 배열 수식이 있으면 거부 |
+| `excel_import_csv` | CSV 파일을 `startCell`(기본 A1)부터 기록. CSV 범위만 덮어쓰며 빈 칸은 셀을 비움. `=...`는 수식, `'...`는 텍스트, 일반 십진수·TRUE/FALSE는 해당 타입, 나머지는 텍스트. UTF-8이 아니면 거부 |
 
 ### Format (6)
 

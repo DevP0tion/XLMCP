@@ -10,7 +10,7 @@ import { workbookParam, sheetParam } from "../../schemas/common.js";
 import { readRange } from "./read-range.tool.js";
 import { colNumToLetter } from "../data/insert-delete-rows-cols.tool.js";
 
-const DEFAULT_CHUNK_SIZE = 500;
+export const DEFAULT_CHUNK_SIZE = 500;
 
 interface FormulaEntry {
   rowOffset: number;
@@ -18,7 +18,7 @@ interface FormulaEntry {
   formula: string;
 }
 
-type CellInput = string | number | boolean | null;
+export type CellInput = string | number | boolean | null;
 
 const STRICT_NUMBER = /^-?(0|[1-9]\d*)(\.\d+)?$/;
 // Excel parses strings written through Value2 like typed input ("0852"->852, "1/2"->date, "TRUE"->bool,
@@ -26,7 +26,7 @@ const STRICT_NUMBER = /^-?(0|[1-9]\d*)(\.\d+)?$/;
 const EXCEL_WOULD_PARSE = /\d|^(true|false)$|^[#'=]/i;
 
 /** Value written through Value2 for one non-formula input cell. */
-function toCell(v: CellInput): string | number | boolean | null {
+export function toCell(v: CellInput): string | number | boolean | null {
   if (v === null || v === "") return null; // empty cell, never a zero-length string (Text-formatted columns keep "")
   if (typeof v !== "string") return v;
   // > 15 significant digits would be rounded by Excel, so such digit strings stay text
@@ -119,11 +119,13 @@ async function verifyWrite(
 /**
  * Write one block of cells to a JSON temp file and return the PS fragment that loads it into $arr
  * (object[rows,cols]). Formulas are returned separately and left $null in $arr.
+ * raw: cells are already what Value2 should receive (import_csv), so toCell is skipped.
  */
 export function buildFill(
   data: CellInput[][],
   rowOffset = 0,
-  formulasOn = true
+  formulasOn = true,
+  raw = false
 ): { script: string; formulas: FormulaEntry[]; tmpFile: string } {
   const rows = data.length;
   const cols = data[0]?.length ?? 0;
@@ -134,7 +136,7 @@ export function buildFill(
         formulas.push({ rowOffset: rowOffset + ri, colOffset: ci, formula: v });
         return null;
       }
-      return toCell(v);
+      return raw ? v : toCell(v);
     })
   );
   const tmpFile = join(tmpdir(), `xlmcp_chunk_${randomUUID()}.json`);
@@ -178,7 +180,8 @@ export async function captureAppState(wbName: string): Promise<string> {
 }
 
 // ── 청크 분할 + 임시 파일 + 순차 ──
-async function writeChunked(
+// asStored (import_csv): cells are Value2-ready and formulas are Formula2 text, so dynamic arrays spill again.
+export async function writeChunked(
   wbName: string,
   shName: string,
   startCell: string,
@@ -186,13 +189,14 @@ async function writeChunked(
   rows: number,
   cols: number,
   chunkSize: number,
-  formulasOn: boolean
+  formulasOn: boolean,
+  asStored = false
 ) {
   // 청크 분할 (각 청크는 자체 JSON 임시 파일)
   const chunks: { rowOffset: number; chunkRows: number; fill: ReturnType<typeof buildFill> }[] = [];
   for (let offset = 0; offset < rows; offset += chunkSize) {
     const chunkData = data.slice(offset, offset + chunkSize);
-    chunks.push({ rowOffset: offset, chunkRows: chunkData.length, fill: buildFill(chunkData, offset, formulasOn) });
+    chunks.push({ rowOffset: offset, chunkRows: chunkData.length, fill: buildFill(chunkData, offset, formulasOn, asStored) });
   }
   const formulas = chunks.flatMap((c) => c.fill.formulas);
   // 수식은 연속 블록 단위 JSON → Range.Formula 대입 (상수는 .Formula로 보내지 않음: 입력처럼 해석됨)
@@ -218,12 +222,15 @@ async function writeChunked(
     const formulaCmds = formulaFile
       ? `
           $runs = Get-Content '${psEscape(formulaFile)}' -Raw -Encoding UTF8 | ConvertFrom-Json
+          # Excel without dynamic arrays (2019 and older) has no Formula2
+          $useF2 = $false
+          ${asStored ? "try { $useF2 = $null -ne $start.Formula2 } catch { }" : ""}
           foreach ($run in @($runs)) {
             $fs = @($run.f)
             $fa = New-Object 'object[,]' $fs.Count,1
             for ($k = 0; $k -lt $fs.Count; $k++) { $fa[$k,0] = $fs[$k] }
             $fr = $ws.Range($ws.Cells.Item($start.Row + $run.r, $start.Column + $run.c), $ws.Cells.Item($start.Row + $run.r + $fs.Count - 1, $start.Column + $run.c))
-            $fr.Formula = $fa
+            if ($useF2) { $fr.Formula2 = $fa } else { $fr.Formula = $fa }
             [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($fr); $fr = $null
           }`
       : "";
