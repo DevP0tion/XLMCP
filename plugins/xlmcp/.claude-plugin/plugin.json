@@ -1,7 +1,7 @@
 {
   "name": "xlmcp",
   "description": "Excel automation MCP server (52 tools). Session pooling, virtual clipboard, chunked range I/O.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "userConfig": {
     "pool_size": {
       "title": "Pool Size",

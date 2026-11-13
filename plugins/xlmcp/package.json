@@ -1,6 +1,6 @@
 {
   "name": "xlmcp",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Excel automation MCP server via PowerShell COM. 52 tools — session pooling, chunked range I/O, virtual clipboard. Windows only.",
   "license": "MIT",
   "author": "DevP0tion",
